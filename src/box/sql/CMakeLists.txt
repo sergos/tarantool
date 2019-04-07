@@ -7,8 +7,18 @@ set(EXT_BIN_DIR ${CMAKE_BINARY_DIR}/extra)
 set(SQL_SRC_DIR ${CMAKE_SOURCE_DIR}/src/box/sql)
 set(SQL_BIN_DIR ${CMAKE_BINARY_DIR}/src/box/sql)
 
+set(LLVM_DIR /usr/local/Cellar/llvm/7.0.1/lib/cmake/llvm)
+find_package(LLVM REQUIRED CONFIG)
+llvm_map_components_to_libnames(llvm_libs core mcjit ipo orcjit executionengine interpreter mc AllTargetsAsmParsers support nativecodegen)
+
 include_directories(${SQL_SRC_DIR})
 include_directories(${SQL_BIN_DIR})
+string(REPLACE "-Wunused-parameter" "" CUSTOM_FLAGS ${CMAKE_CXX_FLAGS})
+string(REPLACE "-Werror" "" CUSTOM_FLAGS ${CUSTOM_FLAGS})
+
+set(CMAKE_CXX_FLAGS ${CUSTOM_FLAGS})
+
+include_directories(/usr/local/opt/llvm/include)
 
 add_definitions(-DSQL_MAX_WORKER_THREADS=0)
 add_definitions(-DSQL_OMIT_AUTOMATIC_INDEX)
@@ -19,6 +29,14 @@ set(TEST_DEFINITIONS
     SQL_PRIVATE=
     SQL_CORE=1
 )
+
+set_source_files_properties(jit_types.c PROPERTIES COMPILE_FLAGS "-emit-llvm")
+
+SET(CMAKE_CXX_FLAGS_SAVED ${CMAKE_CXX_FLAGS})
+SET(CMAKE_CXX_FLAGS "-flto -emit-llvm -c jit_types.bc"  )
+
+SET_SOURCE_FILES_PROPERTIES(jit_types.c CMAKE_CXX_FLAGS)
+SET(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS_SAVED}  )
 
 add_library(sql STATIC
     # Generated files
@@ -58,6 +76,9 @@ add_library(sql STATIC
     update.c
     util.c
     vdbe.c
+    vdbe_jit.c
+    jit_cb.c
+    jit_types.c
     vdbeapi.c
     vdbeaux.c
     vdbemem.c
@@ -68,9 +89,16 @@ add_library(sql STATIC
     wherecode.c
     whereexpr.c
 )
+
+add_library(jit_types STATIC jit_types.c)
+target_compile_options(jit_types PUBLIC -emit-llvm )
+#target_compile_options(jit_types PUBLIC -flto)
+
+
 set_target_properties(sql PROPERTIES COMPILE_DEFINITIONS
     "${TEST_DEFINITIONS}")
 target_link_libraries(sql ${ICU_LIBRARIES})
+target_link_libraries(sql ${llvm_libs})
 
 add_custom_target(generate_sql_files DEPENDS
     parse.h

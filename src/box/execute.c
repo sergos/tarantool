@@ -415,6 +415,7 @@ sql_execute(sql *db, struct sql_stmt *stmt, struct port *port,
 {
 	int rc, column_count = sql_column_count(stmt);
 	if (column_count > 0) {
+		sql_set_port(stmt, port);
 		/* Either ROW or DONE or ERROR. */
 		while ((rc = sql_step(stmt)) == SQL_ROW) {
 			if (sql_row_to_port(stmt, column_count, region,

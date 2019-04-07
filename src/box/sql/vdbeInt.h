@@ -448,6 +448,18 @@ struct Vdbe {
 	AuxData *pAuxData;	/* Linked list of auxdata allocations */
 	/* Anonymous savepoint for aborts only */
 	Savepoint *anonymous_savepoint;
+	/**
+	 * If option is enabled, then part of VDBE byte-code may
+	 * be converted into LLVM bit-code and executed using
+	 * JIT facilities.
+	 */
+	bool jit_on;
+	struct jit_execute_context *jit_context;
+	/**
+	 * Port may be used only during execution of JITted code
+	 * to avoid stopping VDBE to invoke sql_row_to_port().
+	 */
+	struct port *port;
 #ifdef SQL_ENABLE_STMT_SCANSTATUS
 	i64 *anExec;		/* Number of times each op has been executed */
 	int nScan;		/* Entries in aScan[] */

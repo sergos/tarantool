@@ -12,6 +12,7 @@
 #define PragTyp_INDEX_LIST                    11
 #define PragTyp_STATS                         15
 #define PragTyp_TABLE_INFO                    17
+#define PragTyp_VDBE_JIT                      18
 #define PragTyp_DEFAULT_ENGINE                25
 #define PragTyp_COMPOUND_SELECT_LIMIT         26
 
@@ -147,6 +148,10 @@ static const char *const pragCName[] = {
 	/* Used by: where_trace */
 	/*  92 */ "where_trace",
 	/*  93 */ "INTEGER",
+	/* Used by: vdbe_jit */
+	/*  94 */ "vdbe_jit",
+	/*  95 */ "INTEGER",
+
 };
 
 /* Definitions of all built-in pragmas */
@@ -281,6 +286,11 @@ static const PragmaName aPragmaName[] = {
 	 /* ePragFlg:  */ PragFlg_Result0 | PragFlg_NoColumns1,
 	 /* ColNames:  */ 86, 1,
 	 /* iArg:      */ SQL_VdbeEQP},
+	{ /* zName:     */ "vdbe_jit",
+	 /* ePragTyp:  */ PragTyp_FLAG,
+	 /* ePragFlg:  */ PragFlg_Result0 | PragFlg_NoColumns1,
+	 /* ColNames:  */ 94, 1,
+	 /* iArg:      */ SQL_VdbeJIT},
 	{ /* zName:     */ "vdbe_listing",
 	 /* ePragTyp:  */ PragTyp_FLAG,
 	 /* ePragFlg:  */ PragFlg_Result0 | PragFlg_NoColumns1,

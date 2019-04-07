@@ -570,6 +570,9 @@ sql_prepare_v2(sql * db,	/* Database handle */
 int
 sql_step(sql_stmt *);
 
+void
+sql_set_port(struct sql_stmt *stmt, struct port *port);
+
 const void *
 sql_column_blob(sql_stmt *, int iCol);
 
@@ -1427,6 +1430,9 @@ struct FuncDefHash {
 	FuncDef *a[SQL_FUNC_HASH_SZ];	/* Hash table for functions */
 };
 
+int
+llvm_init();
+
 /*
  * Each database connection is an instance of the following structure.
  */
@@ -1483,6 +1489,8 @@ struct sql {
 #endif
 	Hash aFunc;		/* Hash table of connection functions */
 	int *pnBytesFreed;	/* If not NULL, increment this in DbFree() */
+	/** True if LLVM JIT has been already initialized. */
+	bool vdbe_jit_init;
 };
 
 /*
@@ -1511,6 +1519,8 @@ struct sql {
 #define SQL_PreferBuiltin  0x00200000	/* Preference to built-in funcs */
 #define SQL_EnableTrigger  0x01000000	/* True to enable triggers */
 #define SQL_DeferFKs       0x02000000	/* Defer all FK constraints */
+#define SQL_VdbeJIT        0x04000000	/* VDBE may use LLVM JIT to speed up
+					 * execution of byte-code. */
 #define SQL_VdbeEQP        0x08000000	/* Debug EXPLAIN QUERY PLAN */
 
 /* Bits of the sql.dbOptFlags field. */
@@ -1923,6 +1933,7 @@ struct AggInfo {
 		 * Register, holding ephemeral's space pointer.
 		 */
 		int reg_eph;
+		bool is_jitted;
 	} *aFunc;
 	int nFunc;		/* Number of entries in aFunc[] */
 };
@@ -2692,6 +2703,8 @@ struct Parse {
 	 */
 	struct rlist record_list;
 	bool initiateTTrans;	/* Initiate Tarantool transaction */
+	bool avoid_jit;
+	struct jit_compile_context *jit_context;
 	/** If set - do not emit byte code at all, just parse.  */
 	bool parse_only;
 	/** Type of parsed_ast member. */
@@ -3152,6 +3165,9 @@ sql_normalized_name_region_new(struct region *r, const char *name, int len);
 
 int sqlKeywordCode(const unsigned char *, int);
 int sqlRunParser(Parse *, const char *);
+
+struct jit_compile_context *
+parse_get_jit_context(struct Parse *parse);
 
 /**
  * This routine is called after a single SQL statement has been
@@ -3723,6 +3739,13 @@ sql_transaction_rollback(struct Parse *parse_context);
 
 void sqlSavepoint(Parse *, int, Token *);
 void sqlCloseSavepoints(Vdbe *);
+
+bool
+expr_can_be_jitted(struct Expr *expr);
+
+bool
+expr_list_can_be_jitted(struct ExprList *expr_list);
+
 int sqlExprIsConstant(Expr *);
 int sqlExprIsConstantNotJoin(Expr *);
 int sqlExprIsConstantOrFunction(Expr *, u8);
@@ -4203,7 +4226,7 @@ sql_trigger_delete_step(struct sql *db, struct Token *table_name,
  */
 uint64_t
 sql_trigger_colmask(Parse *parser, struct sql_trigger *trigger,
-		    ExprList *changes_list, int new, int tr_tm,
+		    ExprList *changes_list, int new_val, int tr_tm,
 		    struct space *space, int orconf);
 #define sqlParseToplevel(p) ((p)->pToplevel ? (p)->pToplevel : (p))
 #define sqlIsToplevel(p) ((p)->pToplevel==0)

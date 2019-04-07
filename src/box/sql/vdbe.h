@@ -218,6 +218,13 @@ int sqlVdbeAddOp3(Vdbe *, int, int, int, int);
 int sqlVdbeAddOp4(Vdbe *, int, int, int, int, const char *zP4, int);
 int sqlVdbeAddOp4Dup8(Vdbe *, int, int, int, int, const u8 *, int);
 int sqlVdbeAddOp4Int(Vdbe *, int, int, int, int, int);
+
+struct jit_func_context;
+
+void
+vdbe_add_jit_op(struct Vdbe *v, int cursor, int res,
+		struct jit_func_context *func, char *comment);
+
 void sqlVdbeEndCoroutine(Vdbe *, int);
 #if defined(SQL_DEBUG) && !defined(SQL_TEST_REALLOC_STRESS)
 void sqlVdbeVerifyNoResultRow(Vdbe * p);

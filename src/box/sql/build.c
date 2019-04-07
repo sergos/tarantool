@@ -107,6 +107,7 @@ sql_finish_coding(struct Parse *parse_context)
 	assert(parse_context->pToplevel == NULL);
 	struct sql *db = parse_context->db;
 	struct Vdbe *v = sqlGetVdbe(parse_context);
+
 	sqlVdbeAddOp0(v, OP_Halt);
 	/*
 	 * In case statement "CREATE TABLE ..." fails it can

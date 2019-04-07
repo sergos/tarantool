@@ -38,6 +38,7 @@
 #include "tarantoolInt.h"
 #include "box/space.h"
 #include "box/session.h"
+#include "vdbe_jit.h"
 
 /*
  * Compile the UTF-8 encoded SQL statement zSql into a statement handle.
@@ -298,6 +299,7 @@ sql_parser_destroy(Parse *parser)
 	sqlDbFree(db, parser->aLabel);
 	sql_expr_list_delete(db, parser->pConstExpr);
 	create_table_def_destroy(&parser->create_table_def);
+	jit_compile_context_release(parser->jit_context);
 	if (db != NULL) {
 		assert(db->lookaside.bDisable >=
 		       parser->disableLookaside);

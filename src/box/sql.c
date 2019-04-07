@@ -74,6 +74,8 @@ sql_init()
 	if (sql_init_db(&db) != SQL_OK)
 		panic("failed to initialize SQL subsystem");
 
+	if (llvm_init() != 0)
+		say_info("failed to initialize LLVM JIT subsystem");
 	assert(db != NULL);
 }
 
