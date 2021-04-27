@@ -37,6 +37,8 @@ set(LUAJIT_SMART_STRINGS ON CACHE BOOL
     "Harder string hashing function" FORCE)
 set(LUAJIT_TEST_BINARY $<TARGET_FILE:tarantool> CACHE STRING
     "Lua implementation to be used for tests (tarantool)" FORCE)
+set(LUAJIT_USE_GDBJIT ON CACHE BOOL
+    "GDB JIT support" FORCE)
 set(LUAJIT_USE_TEST OFF CACHE BOOL
     "Generate <test> target" FORCE)
 
