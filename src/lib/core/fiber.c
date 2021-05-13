@@ -37,6 +37,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pmatomic.h>
+#include <time.h>
 
 #include "assoc.h"
 #include "memory.h"
@@ -46,7 +47,6 @@
 extern void cord_on_yield(void);
 
 #if ENABLE_FIBER_TOP
-#include <x86intrin.h> /* __rdtscp() */
 
 static inline void
 clock_stat_add_delta(struct clock_stat *stat, uint64_t clock_delta)
@@ -85,7 +85,13 @@ clock_stat_reset(struct clock_stat *stat)
 static void
 cpu_stat_start(struct cpu_stat *stat)
 {
-	stat->prev_clock = __rdtscp(&stat->prev_cpu_id);
+	struct timespec ts;
+	if (clock_gettime(CLOCK_MONOTONIC_RAW, &ts) != 0) {
+		say_debug("clock_gettime(): failed to get this thread's"
+			  " cpu time.");
+		return;
+        }
+        stat->prev_clock = (uint64_t) ts.tv_sec * FIBER_TIME_RES + ts.tv_nsec;
 	stat->cpu_miss_count = 0;
 	/*
 	 * We want to measure thread cpu time here to calculate
@@ -93,7 +99,6 @@ cpu_stat_start(struct cpu_stat *stat)
 	 * ev_time() since they use either monotonic or realtime
 	 * system clocks.
 	 */
-	struct timespec ts;
 	if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts) != 0) {
 		say_debug("clock_gettime(): failed to get this thread's"
 			  " cpu time.");
@@ -112,16 +117,16 @@ cpu_stat_reset(struct cpu_stat *stat)
 static uint64_t
 cpu_stat_on_csw(struct cpu_stat *stat)
 {
-	uint32_t cpu_id;
-	uint64_t delta, clock = __rdtscp(&cpu_id);
+	struct timespec ts;
+	if (clock_gettime(CLOCK_MONOTONIC_RAW, &ts) != 0) {
+		say_debug("clock_gettime(): failed to get this thread's"
+			  " cpu time.");
+		return 0;
+        }
 
-	if (cpu_id == stat->prev_cpu_id) {
-		delta = clock - stat->prev_clock;
-	} else {
-		delta = 0;
-		stat->prev_cpu_id = cpu_id;
-		stat->cpu_miss_count++;
-	}
+	uint64_t delta, clock = (uint64_t) ts.tv_sec * FIBER_TIME_RES + ts.tv_nsec;
+
+        delta = clock - stat->prev_clock;
 	stat->prev_clock = clock;
 
 	return delta;
