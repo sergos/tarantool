@@ -47,6 +47,8 @@ build-indep: debian/tarantool-common.install
 tarball: clean
 	git describe --long --always > VERSION
 	tar --exclude=.git --exclude=debian 		\
+	    --exclude='*.dll' \
+	    --exclude='*.exe' \
 		--exclude=doc/www					\
 		--exclude=doc/sphinx				\
 		--exclude=src/lib/small/debian		\
