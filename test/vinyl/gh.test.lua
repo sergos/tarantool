@@ -283,12 +283,12 @@ count = 10000
 s = box.schema.space.create("test", {engine='vinyl'})
 _ = s:create_index('pk')
 
-cont = true
+cont = 1
 finished = 0
 
 test_run:cmd("setopt delimiter ';'")
 _ = fiber.create(function()
-    while cont do
+    while cont ~= 0 do
         s:select(math.random(count), {iterator = box.index.LE, limit = 10})
         fiber.sleep(0.01)
     end
@@ -296,7 +296,7 @@ _ = fiber.create(function()
 end);
 
 _ = fiber.create(function()
-    while cont do
+    while cont ~= 0 do
         box.snapshot()
         fiber.sleep(0.01)
     end
@@ -308,7 +308,7 @@ for i = 1, count do
 end;
 test_run:cmd("setopt delimiter ''");
 
-cont = false
+cont = 0
 test_run:wait_cond(function() return finished == 2 end)
 
 s:drop()
