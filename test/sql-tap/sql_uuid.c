@@ -26,7 +26,7 @@ is_uuid(box_function_ctx_t *ctx, const char *args, const char *args_end)
 		is_uuid = false;
 	}
 
-	char res[BUF_SIZE];
+	char res[BUF_SIZE] = {'\0'};
 	char *end = mp_encode_bool(res, is_uuid);
 	box_return_mp(ctx, res, end);
 	return 0;
@@ -39,7 +39,7 @@ ret_uuid(box_function_ctx_t *ctx, const char *args, const char *args_end)
 	(void)args_end;
 	struct tt_uuid uuid;
 	memset(&uuid, 0x11, sizeof(uuid));
-	char res[BUF_SIZE];
+	char res[BUF_SIZE] = {'\0'};
 	char *end = mp_encode_uuid(res, &uuid);
 	box_return_mp(ctx, res, end);
 	return 0;

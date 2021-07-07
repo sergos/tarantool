@@ -13,7 +13,7 @@ ret_bin(box_function_ctx_t *ctx, const char *args, const char *args_end)
 	(void)args;
 	(void)args_end;
 	const char bin[] = "some varbinary string";
-	char res[BUF_SIZE];
+	char res[BUF_SIZE] = {'\0'};
 	char *end = mp_encode_bin(res, bin, sizeof(bin));
 	box_return_mp(ctx, res, end);
 	return 0;
@@ -26,7 +26,7 @@ ret_uuid(box_function_ctx_t *ctx, const char *args, const char *args_end)
 	(void)args_end;
 	struct tt_uuid uuid;
 	memset(&uuid, 0x11, sizeof(uuid));
-	char res[BUF_SIZE];
+	char res[BUF_SIZE] = {'\0'};
 	char *end = mp_encode_uuid(res, &uuid);
 	box_return_mp(ctx, res, end);
 	return 0;
@@ -39,7 +39,7 @@ ret_decimal(box_function_ctx_t *ctx, const char *args, const char *args_end)
 	(void)args_end;
 	decimal_t dec;
 	decimal_from_string(&dec, "9999999999999999999.9999999999999999999");
-	char res[BUF_SIZE];
+	char res[BUF_SIZE] = {'\0'};
 	char *end = mp_encode_decimal(res, &dec);
 	box_return_mp(ctx, res, end);
 	return 0;
