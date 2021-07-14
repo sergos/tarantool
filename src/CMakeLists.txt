@@ -67,8 +67,13 @@ lua_source(lua_sources ${LUAJIT_SOURCE_ROOT}/tools/memprof.lua)
 lua_source(lua_sources ${LUAJIT_SOURCE_ROOT}/tools/memprof/humanize.lua)
 lua_source(lua_sources ${LUAJIT_SOURCE_ROOT}/tools/memprof/parse.lua)
 lua_source(lua_sources ${LUAJIT_SOURCE_ROOT}/tools/memprof/process.lua)
+lua_source(lua_sources ${LUAJIT_SOURCE_ROOT}/tools/sysprof.lua)
+lua_source(lua_sources ${LUAJIT_SOURCE_ROOT}/tools/sysprof/sysprof_parse.lua)
+lua_source(lua_sources ${LUAJIT_SOURCE_ROOT}/tools/sysprof/sysprof_collapse.lua)
 lua_source(lua_sources ${LUAJIT_SOURCE_ROOT}/tools/utils/bufread.lua)
 lua_source(lua_sources ${LUAJIT_SOURCE_ROOT}/tools/utils/symtab.lua)
+lua_source(lua_sources ${LUAJIT_SOURCE_ROOT}/tools/utils/elf.lua)
+lua_source(lua_sources ${LUAJIT_SOURCE_ROOT}/tools/utils/sotab.lua)
 
 add_custom_target(generate_lua_sources
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/src/box

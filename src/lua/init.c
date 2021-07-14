@@ -126,10 +126,15 @@ extern char strict_lua[],
 	/* tools.* libraries. */
 	bufread_lua[],
 	symtab_lua[],
+	elf_lua[],
+	sotab_lua[],
 	parse_lua[],
 	process_lua[],
 	humanize_lua[],
-	memprof_lua[]
+	memprof_lua[],
+	sysprof_parse_lua[],
+	sysprof_collapse_lua[],
+	sysprof_lua[]
 ;
 
 static const char *lua_modules[] = {
@@ -180,10 +185,15 @@ static const char *lua_modules[] = {
 	/* tools.* libraries. Order is important. */
 	"utils.bufread", bufread_lua,
 	"utils.symtab", symtab_lua,
+	"utils.elf", elf_lua,
+	"utils.sotab", sotab_lua,
 	"memprof.parse", parse_lua,
 	"memprof.process", process_lua,
 	"memprof.humanize", humanize_lua,
 	"memprof", memprof_lua,
+	"sysprof.sysprof_parse", sysprof_parse_lua,
+	"sysprof.sysprof_collapse", sysprof_collapse_lua,
+	"sysprof", sysprof_lua,
 	NULL
 };
 
