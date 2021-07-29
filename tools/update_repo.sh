@@ -117,7 +117,7 @@ EOF
                -r=tarantool_2.2.2.0.<hash>
            It will search and try to remove packages:
              tarantool_2.2.2.0.<hash>-1_all.deb
-             tarantool_2.2.2.0.<hash>-1_amd64.deb
+             tarantool_2.2.2.0.<hash>-1_\${arch}.deb
              tarantool_2.2.2.0.<hash>-1.dsc
              tarantool_2.2.2.0.<hash>-1.debian.tar.xz
              tarantool_2.2.2.0.<hash>.orig.tar.xz
@@ -125,8 +125,8 @@ EOF
            ./tools/update_repo.sh -o=<OS> -d=<DIST> -b=<S3 repo> \\
                -r=tarantool-2.2.2.0
            It will search and try to remove packages:
-             x86_64/tarantool-2.2.2.0-1.*.x86_64.rpm
-             x86_64/tarantool-2.2.2.0-1.*.noarch.rpm
+             \${arch}/tarantool-2.2.2.0-1.*.\${arch}.rpm
+             \${arch}/tarantool-2.2.2.0-1.*.noarch.rpm
              SRPMS/tarantool-2.2.2.0-1.*.src.rpm
     -f|--force
          Force updating the remote package with the local one despite the checksum difference
@@ -493,7 +493,7 @@ function remove_deb {
     update_deb_dists
 
     # remove all found file by the given pattern in options
-    for suffix in '-1_all.deb' '-1_amd64.deb' '-1.dsc' '-1.debian.tar.xz' '.orig.tar.xz' ; do
+    for suffix in '-1_all.deb' '-1_amd64.deb' '-1_arm64.deb' '-1.dsc' '-1.debian.tar.xz' '.orig.tar.xz' ; do
         file="$bucket_path/$poolpath/${remove}$suffix"
         echo "Searching to remove: $file"
         $aws ls "$file" || continue
@@ -538,7 +538,7 @@ Origin: Tarantool
 Label: tarantool.org
 Suite: stable
 Codename: $loop_dist
-Architectures: amd64 source
+Architectures: amd64 arm64 source
 Components: $component
 Description: Tarantool DBMS and Tarantool modules
 SignWith: $GPG_SIGN_KEY
@@ -555,7 +555,7 @@ EOF
         updated_files=0
 
         # 1(binaries). use reprepro tool to generate Packages file
-        initiate_deb_metadata dists/$loop_dist/$component/binary-amd64/Packages
+        initiate_deb_metadata dists/$loop_dist/$component/binary-${arch}/Packages
         for deb in $ws/$debdir/$loop_dist/$component/*/*/*.deb ; do
             [ -f $deb ] || continue
             updated_deb=0
@@ -576,8 +576,14 @@ EOF
         done
 
         # 1(sources). use reprepro tool to generate Sources file
-        initiate_deb_metadata dists/$loop_dist/$component/source/Sources
+        if [ "${arch}" = "amd64" ]; then
+            initiate_deb_metadata dists/$loop_dist/$component/source/Sources
+        fi
         for dsc in $ws/$debdir/$loop_dist/$component/*/*/*.dsc ; do
+            # Publish source files only on amd64 to avoid file
+            # name collisions: sources are the same anyway.
+            [ "${arch}" = "amd64" ] || continue
+
             [ -f $dsc ] || continue
             updated_dsc=0
             # regenerate DSC pack
@@ -888,7 +894,7 @@ function remove_rpm {
     # presented in the metadata. However it is possible that some
     # broken update left orphan files: they are present in the
     # storage, but does not mentioned in the metadata.
-    for suffix in 'x86_64' 'noarch' 'src'; do
+    for suffix in "${arch}" 'noarch' 'src'; do
         if [ "$os" == "opensuse-leap" ]; then
             # Open Build Service (openSUSE) does not follow the usual
             # approach: 'Release' is like lp152.1.1, where the first
@@ -945,6 +951,18 @@ EOF
 }
 
 if [ "$os" == "ubuntu" -o "$os" == "debian" ]; then
+    # Assume the script is run on Debian / Ubuntu to use known
+    # Debian's architecture names. It is unclear, whether
+    # $(uname -m) output is standartized.
+    #
+    # TODO: We can use $(rpm --eval '%{_arch}') on
+    # CentOS / Fedora.
+    arch="$(dpkg --print-architecture)"
+    if [ "${arch}" != amd64 ] && [ "${arch}" != arm64 ]; then
+        echo "Unsupported architecture: ${arch}"
+        exit 1
+    fi
+
     # prepare the workspace
     prepare_ws ${os}
 
@@ -972,6 +990,22 @@ if [ "$os" == "ubuntu" -o "$os" == "debian" ]; then
     $rm_file $ws_lockfile
     popd
 elif [ "$os" == "el" -o "$os" == "fedora" -o "$os" == "opensuse-leap" ]; then
+    # Assume the script is run on Debian / Ubuntu.
+    # See the comment in the if brach above for details.
+    arch_dpkg_format="$(dpkg --print-architecture)"
+    case "${arch_dpkg_format}" in
+    amd64)
+        arch=x86_64
+        ;;
+    arm64)
+        arch=aarch64
+        ;;
+    *)
+        echo "Unsupported architecture: ${arch_dpkg_format}"
+        exit 1
+        ;;
+    esac
+
     # RPM packages structure needs different paths for binaries and sources
     # packages, in this way it is needed to call the packages registering
     # script twice with the given format:
@@ -981,9 +1015,9 @@ elif [ "$os" == "el" -o "$os" == "fedora" -o "$os" == "opensuse-leap" ]; then
     # prepare the workspace
     prepare_ws ${os}_${option_dist}
     if [ "$remove" != "" ]; then
-        remove_rpm x86_64 "-1.*.x86_64.rpm -1.*.noarch.rpm"
+        remove_rpm "${arch}"  "-1.*.${arch}.rpm -1.*.noarch.rpm"
     else
-        pack_rpm x86_64 "*.x86_64.rpm *.noarch.rpm"
+        pack_rpm "${arch}" "*.${arch}.rpm *.noarch.rpm"
     fi
     # unlock the publishing
     $rm_file $ws_lockfile
@@ -994,14 +1028,18 @@ elif [ "$os" == "el" -o "$os" == "fedora" -o "$os" == "opensuse-leap" ]; then
     if [ "$remove" != "" ]; then
         remove_rpm SRPMS "-1.*.src.rpm"
     else
-        pack_rpm SRPMS "*.src.rpm"
+        # Publish source packages only on x86_64 to avoid file
+        # name collisions: sources are the same anyway.
+        if [ "${arch}" == "x86_64" ]; then
+            pack_rpm SRPMS "*.src.rpm"
+        fi
     fi
     # unlock the publishing
     $rm_file $ws_lockfile
     popd 2>/dev/null || true
 
     if [ "$remove" == "" -a "$packed_rpms" == "" ]; then
-        echo "ERROR: Current '$repo' path doesn't have '*.x86_64.rpm *.noarch.rpm *.src.rpm' packages in path"
+        echo "ERROR: Current '$repo' path doesn't have '*.${arch}.rpm *.noarch.rpm *.src.rpm' packages in path"
         usage
         exit 1
     fi
