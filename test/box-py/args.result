@@ -9,6 +9,8 @@ When no script name is provided, the server responds to:
   -v, --version			print program version and exit
   -e EXPR			execute string 'EXPR'
   -l NAME			require library 'NAME'
+  -j CMD 			perform LuaJIT control command
+  -b[options] input output	save LuaJIT bytecode
   -i				enter interactive mode after executing 'SCRIPT'
   --				stop handling options
   -				execute stdin and stop handling options
@@ -27,6 +29,8 @@ When no script name is provided, the server responds to:
   -v, --version			print program version and exit
   -e EXPR			execute string 'EXPR'
   -l NAME			require library 'NAME'
+  -j CMD 			perform LuaJIT control command
+  -b[options] input output	save LuaJIT bytecode
   -i				enter interactive mode after executing 'SCRIPT'
   --				stop handling options
   -				execute stdin and stop handling options
