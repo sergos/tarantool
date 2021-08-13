@@ -6,7 +6,10 @@ on:
   repository_dispatch:
     types: [backend_automation]
   workflow_dispatch:
-
+    inputs:
+      commit:
+        description: "Commit id"
+        required: false
 env:
   CI_MAKE: make -f .travis.mk
 
@@ -28,6 +31,9 @@ jobs:
         with:
           fetch-depth: 0
           submodules: recursive
+      - name: Checkout input commit hash
+        run: |
+          git checkout ${{ github.event.inputs.commit }}
       - uses: ./.github/actions/environment
       - name: test
         run: ${CI_MAKE} test_static_build_cmake_osx_github_actions
