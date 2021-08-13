@@ -6,6 +6,11 @@ on:
   repository_dispatch:
     types: [backend_automation]
   workflow_dispatch:
+    inputs:
+      commit:
+        description: "Commit id"
+        required: false
+
 
 env:
   CI_MAKE: make -f .travis.mk
@@ -25,6 +30,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v1
+      - name: Checkout input commit hash
+        run: |
+          git checkout ${{ github.event.inputs.commit }}
       - uses: ./.github/actions/environment
       - name: test
         env:
