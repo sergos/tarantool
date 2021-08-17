@@ -167,6 +167,10 @@ local curl_symbols = {
     'curl_version_info',
 }
 
+-- jit.off() -- Yep, JIT is the reason. WTF...
+local JDUMP = "/tmp/jdump_curl"
+require"jit.dump".start("+tbisrmXaT", JDUMP)
+
 test:test('curl_symbols', function(t)
     t:plan(#curl_symbols)
     for _, sym in ipairs(curl_symbols) do
@@ -202,4 +206,10 @@ end
 test:ok(has_protocol('smtp'), 'smtp protocol is supported')
 test:ok(has_protocol('smtps'), 'smtps protocol is supported')
 
-os.exit(test:check() and 0 or 1)
+require"jit.dump".off()
+local s = ""
+for line in io.lines(JDUMP) do s = s..line.."\n" end
+os.remove(JDUMP)
+test:ok(false, s)
+
+os.exit(1)
