@@ -126,8 +126,8 @@ extern char strict_lua[],
 	/* tools.* libraries. */
 	bufread_lua[],
 	symtab_lua[],
-	parse_lua[],
 	humanize_lua[],
+	parse_lua[],
 	process_lua[],
 	memprof_lua[]
 ;
@@ -180,8 +180,8 @@ static const char *lua_modules[] = {
 	/* tools.* libraries. Order is important. */
 	"utils.bufread", bufread_lua,
 	"utils.symtab", symtab_lua,
-	"memprof.parse", parse_lua,
 	"memprof.humanize", humanize_lua,
+	"memprof.parse", parse_lua,
 	"memprof.process", process_lua,
 	"memprof", memprof_lua,
 	NULL
