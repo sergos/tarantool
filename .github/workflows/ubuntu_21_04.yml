@@ -9,7 +9,7 @@ on:
     inputs:
       commit:
         description: "Commit id"
-        required: false
+        required: true
 
 
 jobs:
@@ -36,6 +36,10 @@ jobs:
         with:
           fetch-depth: 0
           submodules: recursive
+      - uses: betanzos/check-commit-exist@v1
+        with:
+          commit: ${{ github.event.inputs.commit }}
+          invert: 'false'
       - name: Checkout input commit hash
         run: |
           git checkout ${{ github.event.inputs.commit }}
