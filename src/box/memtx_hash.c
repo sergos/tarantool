@@ -41,6 +41,7 @@
 #include "errinj.h"
 
 #include <small/mempool.h>
+#include "quantum/quantum.h"
 
 static inline bool
 memtx_hash_equal(struct tuple *tuple_a, struct tuple *tuple_b,
@@ -58,15 +59,33 @@ memtx_hash_equal_key(struct tuple *tuple, const char *key,
 				      HINT_NONE, key_def) == 0;
 }
 
+static uint64_t quantums = 0;
+
+static inline void
+memtx_hash_quantum_inc()
+{
+	quantums++;
+}
+
+static inline void
+memtx_hash_quantum_add()
+{
+	quantum_add(quantums);
+	quantums = 0;
+}
+
+
 #define LIGHT_NAME _index
 #define LIGHT_DATA_TYPE struct tuple *
 #define LIGHT_KEY_TYPE const char *
 #define LIGHT_CMP_ARG_TYPE struct key_def *
 #define LIGHT_EQUAL(a, b, c) memtx_hash_equal(a, b, c)
 #define LIGHT_EQUAL_KEY(a, b, c) memtx_hash_equal_key(a, b, c)
+#define LIGHT_TICK_CALLBACK memtx_hash_quantum_inc
 
 #include "salad/light.h"
 
+#undef LIGHT_TICK_CALLBACK
 #undef LIGHT_NAME
 #undef LIGHT_DATA_TYPE
 #undef LIGHT_KEY_TYPE
@@ -110,6 +129,7 @@ hash_iterator_ge_base(struct iterator *ptr, struct tuple **ret)
 	struct memtx_hash_index *index = (struct memtx_hash_index *)ptr->index;
 	struct tuple **res = light_index_iterator_get_and_next(&index->hash_table,
 							       &it->iterator);
+	memtx_hash_quantum_add();
 	*ret = res != NULL ? *res : NULL;
 	return 0;
 }
@@ -126,6 +146,7 @@ hash_iterator_gt_base(struct iterator *ptr, struct tuple **ret)
 	if (res != NULL)
 		res = light_index_iterator_get_and_next(&index->hash_table,
 							&it->iterator);
+	memtx_hash_quantum_add();
 	*ret = res != NULL ? *res : NULL;
 	return 0;
 }

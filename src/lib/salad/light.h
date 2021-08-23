@@ -104,6 +104,15 @@
 #endif
 #define LIGHT(name) CONCAT4(light, LIGHT_NAME, _, name)
 
+#ifndef LIGHT_TICK_CALLBACK
+static inline void
+LIGHT(tick_callback_nop)()
+{
+	return;
+}
+#define LIGHT_TICK_CALLBACK LIGHT(tick_callback_nop)
+#endif
+
 /**
  * Overhead per value stored in a hash table.
  * Must be adjusted if struct LIGHT(record) is modified.
@@ -379,6 +388,7 @@ LIGHT(destroy)(struct LIGHT(core) *ht)
 static inline uint32_t
 LIGHT(slot)(const struct LIGHT(core) *ht, uint32_t hash)
 {
+	LIGHT_TICK_CALLBACK();
 	uint32_t cover_mask = ht->cover_mask;
 	uint32_t res = hash & cover_mask;
 	uint32_t probe = (ht->table_size - res - 1) >> 31;
@@ -409,6 +419,7 @@ LIGHT(find)(const struct LIGHT(core) *ht, uint32_t hash, LIGHT_DATA_TYPE value)
 		if (record->hash == hash
 		    && LIGHT_EQUAL((record->value), (value), (ht->arg)))
 			return slot;
+		LIGHT_TICK_CALLBACK();
 		slot = record->next;
 		if (slot == LIGHT(end))
 			return LIGHT(end);
@@ -440,6 +451,7 @@ LIGHT(find_key)(const struct LIGHT(core) *ht, uint32_t hash, LIGHT_KEY_TYPE key)
 		if (record->hash == hash &&
 		    LIGHT_EQUAL_KEY((record->value), (key), (ht->arg)))
 			return slot;
+		LIGHT_TICK_CALLBACK();
 		slot = record->next;
 		if (slot == LIGHT(end))
 			return LIGHT(end);
@@ -480,6 +492,7 @@ LIGHT(replace)(struct LIGHT(core) *ht, uint32_t hash,
 			record->value = value;
 			return slot;
 		}
+		LIGHT_TICK_CALLBACK();
 		slot = record->next;
 		if (slot == LIGHT(end))
 			return LIGHT(end);
@@ -640,6 +653,7 @@ LIGHT(prepare_first_insert)(struct LIGHT(core) *ht)
 	ht->cover_mask = LIGHT_GROW_INCREMENT - 1;
 	ht->empty_slot = 0;
 	for (int i = 0; i < LIGHT_GROW_INCREMENT; i++) {
+		LIGHT_TICK_CALLBACK();
 		record[i].next = i;
 		LIGHT(set_empty_prev)(record + i, i - 1);
 		LIGHT(set_empty_next)(record + i, i + 1);
@@ -688,6 +702,7 @@ LIGHT(grow)(struct LIGHT(core) *ht)
 
 	for (int i = 0; i < LIGHT_GROW_INCREMENT;
 	     i++, susp_slot++, susp_record++, new_slot++, new_record++) {
+		LIGHT_TICK_CALLBACK();
 		if (susp_record->next == susp_slot) {
 			/* Suspicious slot is empty, nothing to split */
 			LIGHT(enqueue_empty)(ht, new_slot, new_record);
@@ -712,6 +727,7 @@ LIGHT(grow)(struct LIGHT(core) *ht)
 		struct LIGHT(record) *prev_record = 0;
 		uint32_t prev_slot = LIGHT(end);
 		while (1) {
+			LIGHT_TICK_CALLBACK();
 			uint32_t test_flag = (test_record->hash >> shift)
 					     & ((uint32_t)1);
 			if (test_flag != prev_flag) {
@@ -776,6 +792,7 @@ LIGHT(insert)(struct LIGHT(core) *ht, uint32_t hash, LIGHT_DATA_TYPE value)
 
 	if (record->next == slot) {
 		/* Inserting to an empty slot */
+		LIGHT_TICK_CALLBACK();
 		record = LIGHT(detach_empty)(ht, slot);
 		if (!record)
 			return LIGHT(end);
@@ -791,6 +808,7 @@ LIGHT(insert)(struct LIGHT(core) *ht, uint32_t hash, LIGHT_DATA_TYPE value)
 		chain = (struct LIGHT(record) *)
 			matras_get(&ht->mtable, chain_slot);
 		while (chain->next != slot) {
+			LIGHT_TICK_CALLBACK();
 			chain_slot = chain->next;
 			chain = (struct LIGHT(record) *)
 				matras_get(&ht->mtable, chain_slot);
@@ -803,9 +821,11 @@ LIGHT(insert)(struct LIGHT(core) *ht, uint32_t hash, LIGHT_DATA_TYPE value)
 
 	uint32_t empty_slot = ht->empty_slot;
 	struct LIGHT(record) *empty_record = LIGHT(detach_first_empty)(ht);
+	LIGHT_TICK_CALLBACK();
 	if (!empty_record)
 		return LIGHT(end);
 
+	LIGHT_TICK_CALLBACK();
 	if (chain_slot == slot) {
 		/* add to existing chain */
 		empty_record->value = value;
@@ -860,12 +880,14 @@ LIGHT(delete)(struct LIGHT(core) *ht, uint32_t slot)
 			/* deleting a last record of chain */
 			struct LIGHT(record) *chain = (struct LIGHT(record) *)
 				matras_get(&ht->mtable, chain_slot);
+			LIGHT_TICK_CALLBACK();
 			uint32_t chain_next_slot = chain->next;
 			assert(chain_next_slot != LIGHT(end));
 			while (chain_next_slot != slot) {
 				chain_slot = chain_next_slot;
 				chain = (struct LIGHT(record) *)
 					matras_get(&ht->mtable, chain_slot);
+				LIGHT_TICK_CALLBACK();
 				chain_next_slot = chain->next;
 				assert(chain_next_slot != LIGHT(end));
 			}
@@ -905,6 +927,7 @@ LIGHT(delete_value)(struct LIGHT(core) *ht, uint32_t hash, LIGHT_DATA_TYPE value
 		    && LIGHT_EQUAL((record->value), (value), (ht->arg)))
 			break;
 		prev_slot = slot;
+		LIGHT_TICK_CALLBACK();
 		slot = record->next;
 		if (slot == LIGHT(end))
 			return 1; /* not found */
@@ -987,6 +1010,7 @@ static inline void
 LIGHT(iterator_begin)(const struct LIGHT(core) *ht, struct LIGHT(iterator) *itr)
 {
 	(void)ht;
+	LIGHT_TICK_CALLBACK();
 	itr->slotpos = 0;
 	matras_head_read_view(&itr->view);
 }
@@ -1020,6 +1044,7 @@ LIGHT(iterator_get_and_next)(const struct LIGHT(core) *ht,
 	view = matras_is_read_view_created(&itr->view) ?
 	       &itr->view : &ht->mtable.head;
 	while (itr->slotpos < view->block_count) {
+		LIGHT_TICK_CALLBACK();
 		uint32_t slotpos = itr->slotpos;
 		struct LIGHT(record) *record = (struct LIGHT(record) *)
 			matras_view_get(&ht->mtable, view, slotpos);

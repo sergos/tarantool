@@ -216,6 +216,7 @@ add_library(box STATIC
     lua/key_def.c
     lua/merger.c
     ${bin_sources})
+target_link_libraries(box quantum)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   add_definitions(-DSQL_DEBUG=1)

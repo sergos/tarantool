@@ -58,9 +58,9 @@ add_executable(random.test random.c core_test_utils.c)
 target_link_libraries(random.test core unit)
 
 add_executable(bps_tree.test bps_tree.cc)
-target_link_libraries(bps_tree.test small misc)
+target_link_libraries(bps_tree.test small misc quantum)
 add_executable(bps_tree_iterator.test bps_tree_iterator.cc)
-target_link_libraries(bps_tree_iterator.test small misc)
+target_link_libraries(bps_tree_iterator.test small misc quantum)
 add_executable(rtree.test rtree.cc)
 target_link_libraries(rtree.test salad small)
 add_executable(rtree_iterator.test rtree_iterator.cc)
@@ -180,7 +180,7 @@ set(ITERATOR_TEST_SOURCES
     ${PROJECT_SOURCE_DIR}/src/box/vy_history.c
     ${PROJECT_SOURCE_DIR}/src/box/vy_mem.c
     ${PROJECT_SOURCE_DIR}/src/box/vy_cache.c)
-set(ITERATOR_TEST_LIBS core tuple xrow unit)
+set(ITERATOR_TEST_LIBS quantum core tuple xrow unit)
 
 add_executable(vy_mem.test vy_mem.c ${ITERATOR_TEST_SOURCES} core_test_utils.c)
 target_link_libraries(vy_mem.test ${ITERATOR_TEST_LIBS} ${LIB_DL})
@@ -206,7 +206,7 @@ add_executable(vy_point_lookup.test
     ${PROJECT_SOURCE_DIR}/src/box/identifier.c
     core_test_utils.c
 )
-target_link_libraries(vy_point_lookup.test core tuple xrow xlog unit ${LIB_DL})
+target_link_libraries(vy_point_lookup.test quantum core tuple xrow xlog unit ${LIB_DL})
 
 add_executable(column_mask.test
     column_mask.c
@@ -224,7 +224,7 @@ add_executable(vy_write_iterator.test
 target_link_libraries(vy_write_iterator.test xlog ${ITERATOR_TEST_LIBS} ${LIB_DL})
 
 add_executable(vy_cache.test vy_cache.c ${ITERATOR_TEST_SOURCES} core_test_utils.c)
-target_link_libraries(vy_cache.test ${ITERATOR_TEST_LIBS} ${LIB_DL})
+target_link_libraries(vy_cache.test quantum ${ITERATOR_TEST_LIBS} ${LIB_DL})
 
 add_executable(coll.test coll.cpp core_test_utils.c)
 target_link_libraries(coll.test coll unit misc ${LIB_DL})

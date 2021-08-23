@@ -1,3 +1,4 @@
+add_subdirectory(quantum)
 add_subdirectory(bit)
 add_subdirectory(bitset)
 set(SMALL_EMBEDDED ON)

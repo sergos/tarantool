@@ -496,6 +496,18 @@ typedef uint32_t bps_tree_block_id_t;
 	_bps_tree(debug_check_insert_and_move_to_right_inner)
 #define bps_tree_debug_check_insert_and_move_to_left_inner \
 	_bps_tree(debug_check_insert_and_move_to_left_inner)
+
+#ifdef BPS_TREE_TICK_CALLBACK
+#define bps_tree_tick_callback BPS_TREE_TICK_CALLBACK
+#else
+#define bps_tree_tick_callback _bps_tree(tick_callback_nop)
+static inline void
+bps_tree_tick_callback()
+{
+	return;
+}
+#endif
+
 /* }}} */
 
 /* {{{ BPS-tree interface (declaration) */
@@ -1333,12 +1345,14 @@ bps_tree_random(const struct bps_tree *tree, size_t rnd)
 	if (tree->root_id == (bps_tree_block_id_t)(-1))
 		return 0;
 
+	bps_tree_tick_callback();
 	struct bps_block *block = bps_tree_root(tree);
 
 	for (bps_tree_block_id_t i = 0; i < tree->depth - 1; i++) {
 		struct bps_inner *inner = (struct bps_inner *)block;
 		bps_tree_pos_t pos = rnd % inner->header.size;
 		rnd /= inner->header.size;
+		bps_tree_tick_callback();
 		block = bps_tree_restore_block(tree, inner->child_ids[pos]);
 	}
 
@@ -1365,6 +1379,7 @@ bps_tree_find_ins_point_key(const struct bps_tree *tree, bps_tree_elem_t *arr,
 	*exact = false;
 #ifdef BPS_BLOCK_LINEAR_SEARCH
 	while (begin != end) {
+		bps_tree_tick_callback();
 		int res = BPS_TREE_COMPARE_KEY(*begin, key, tree->arg);
 		if (res >= 0) {
 			*exact = res == 0;
@@ -1375,6 +1390,7 @@ bps_tree_find_ins_point_key(const struct bps_tree *tree, bps_tree_elem_t *arr,
 	return (bps_tree_pos_t)(begin - arr);
 #else
 	while (begin != end) {
+		bps_tree_tick_callback();
 		bps_tree_elem_t *mid = begin + (end - begin) / 2;
 		int res = BPS_TREE_COMPARE_KEY(*mid, key, tree->arg);
 		if (res > 0) {
@@ -1410,6 +1426,7 @@ bps_tree_find_ins_point_elem(const struct bps_tree *tree, bps_tree_elem_t *arr,
 	*exact = false;
 #ifdef BPS_BLOCK_LINEAR_SEARCH
 	while (begin != end) {
+		bps_tree_tick_callback();
 		int res = BPS_TREE_COMPARE(*begin, elem, tree->arg);
 		if (res >= 0) {
 			*exact = res == 0;
@@ -1420,6 +1437,7 @@ bps_tree_find_ins_point_elem(const struct bps_tree *tree, bps_tree_elem_t *arr,
 	return (bps_tree_pos_t)(begin - arr);
 #else
 	while (begin != end) {
+		bps_tree_tick_callback();
 		bps_tree_elem_t *mid = begin + (end - begin) / 2;
 		int res = BPS_TREE_COMPARE(*mid, elem, tree->arg);
 		if (res > 0) {
@@ -1457,6 +1475,7 @@ bps_tree_find_after_ins_point_key(const struct bps_tree *tree,
 	*exact = false;
 #ifdef BPS_BLOCK_LINEAR_SEARCH
 	while (begin != end) {
+		bps_tree_tick_callback();
 		int res = BPS_TREE_COMPARE_KEY(*begin, key, tree->arg);
 		if (res == 0)
 			*exact = true;
@@ -1467,6 +1486,7 @@ bps_tree_find_after_ins_point_key(const struct bps_tree *tree,
 	return (bps_tree_pos_t)(begin - arr);
 #else
 	while (begin != end) {
+		bps_tree_tick_callback();
 		bps_tree_elem_t *mid = begin + (end - begin) / 2;
 		int res = BPS_TREE_COMPARE_KEY(*mid, key, tree->arg);
 		if (res > 0) {
@@ -1503,6 +1523,7 @@ bps_tree_find_after_ins_point_elem(const struct bps_tree *tree,
 	*exact = false;
 #ifdef BPS_BLOCK_LINEAR_SEARCH
 	while (begin != end) {
+		bps_tree_tick_callback();
 		int res = BPS_TREE_COMPARE(*begin, elem, tree->arg);
 		if (res == 0)
 			*exact = true;
@@ -1513,6 +1534,7 @@ bps_tree_find_after_ins_point_elem(const struct bps_tree *tree,
 	return (bps_tree_pos_t)(begin - arr);
 #else
 	while (begin != end) {
+		bps_tree_tick_callback();
 		bps_tree_elem_t *mid = begin + (end - begin) / 2;
 		int res = BPS_TREE_COMPARE(*mid, elem, tree->arg);
 		if (res > 0) {
@@ -1572,6 +1594,7 @@ bps_tree_get_leaf_safe(const struct bps_tree *tree,
 		struct bps_garbage *garbage = (struct bps_garbage *)block;
 		while (garbage->next_leaf_id != (bps_tree_block_id_t)(-1)
 		       && garbage->next_leaf_id != itr->block_id) {
+			bps_tree_tick_callback();
 			block = bps_tree_restore_block_ver(tree,
 				garbage->next_leaf_id, &itr->view);
 			if (block->type == BPS_TREE_BT_LEAF) {
@@ -1653,6 +1676,7 @@ bps_tree_iterator_are_equal(const struct bps_tree *tree,
 static inline struct bps_tree_iterator
 bps_tree_iterator_first(const struct bps_tree *tree)
 {
+	bps_tree_tick_callback();
 	struct bps_tree_iterator itr;
 	itr.block_id = tree->first_id;
 	itr.pos = 0;
@@ -1668,6 +1692,7 @@ bps_tree_iterator_first(const struct bps_tree *tree)
 static inline struct bps_tree_iterator
 bps_tree_iterator_last(const struct bps_tree *tree)
 {
+	bps_tree_tick_callback();
 	struct bps_tree_iterator itr;
 	itr.block_id = tree->last_id;
 	itr.pos = (bps_tree_pos_t)(-1);
@@ -1685,6 +1710,10 @@ bps_tree_iterator_last(const struct bps_tree *tree)
  *  Pass NULL if you don't need that info.
  * @return - Lower-bound iterator. Invalid if all elements are less than key.
  */
+
+ /*
+  * Support quantums
+  */
 static inline struct bps_tree_iterator
 bps_tree_lower_bound(const struct bps_tree *tree, bps_tree_key_t key,
 		     bool *exact)
@@ -1703,6 +1732,7 @@ bps_tree_lower_bound(const struct bps_tree *tree, bps_tree_key_t key,
 	struct bps_block *block = bps_tree_root(tree);
 	bps_tree_block_id_t block_id = tree->root_id;
 	for (bps_tree_block_id_t i = 0; i < tree->depth - 1; i++) {
+		bps_tree_tick_callback();
 		struct bps_inner *inner = (struct bps_inner *)block;
 		bps_tree_pos_t pos;
 		pos = bps_tree_find_ins_point_key(tree, inner->elems,
@@ -1755,6 +1785,7 @@ bps_tree_upper_bound(const struct bps_tree *tree, bps_tree_key_t key,
 	struct bps_block *block = bps_tree_root(tree);
 	bps_tree_block_id_t block_id = tree->root_id;
 	for (bps_tree_block_id_t i = 0; i < tree->depth - 1; i++) {
+		bps_tree_tick_callback();
 		struct bps_inner *inner = (struct bps_inner *)block;
 		bps_tree_pos_t pos;
 		pos = bps_tree_find_after_ins_point_key(tree, inner->elems,
@@ -1811,6 +1842,7 @@ bps_tree_lower_bound_elem(const struct bps_tree *tree, bps_tree_elem_t key,
 	struct bps_block *block = bps_tree_root(tree);
 	bps_tree_block_id_t block_id = tree->root_id;
 	for (bps_tree_block_id_t i = 0; i < tree->depth - 1; i++) {
+		bps_tree_tick_callback();
 		struct bps_inner *inner = (struct bps_inner *)block;
 		bps_tree_pos_t pos;
 		pos = bps_tree_find_ins_point_elem(tree, inner->elems,
@@ -1864,6 +1896,7 @@ bps_tree_upper_bound_elem(const struct bps_tree *tree, bps_tree_elem_t key,
 	struct bps_block *block = bps_tree_root(tree);
 	bps_tree_block_id_t block_id = tree->root_id;
 	for (bps_tree_block_id_t i = 0; i < tree->depth - 1; i++) {
+		bps_tree_tick_callback();
 		struct bps_inner *inner = (struct bps_inner *)block;
 		bps_tree_pos_t pos;
 		pos = bps_tree_find_after_ins_point_elem(tree, inner->elems,
@@ -1941,9 +1974,11 @@ bps_tree_approximate_count(const struct bps_tree *tree, bps_tree_key_t key)
 			result += upper_pos;
 		}
 
+		bps_tree_tick_callback();
 		bps_tree_block_id_t lower_block_id =
 			lower_inner->child_ids[lower_pos];
 		lower_block = bps_tree_restore_block(tree, lower_block_id);
+		bps_tree_tick_callback();
 		bps_tree_block_id_t upper_block_id =
 			upper_inner->child_ids[upper_pos];
 		upper_block = bps_tree_restore_block(tree, upper_block_id);
@@ -2000,10 +2035,12 @@ bps_tree_iterator_get_elem(const struct bps_tree *tree,
  * @param itr - pointer to tree iterator
  * @return - true on success, false if a resulted iterator is set to invalid
  */
+
 static inline bool
 bps_tree_iterator_next(const struct bps_tree *tree, struct bps_tree_iterator *itr)
 {
 	if (itr->block_id == (bps_tree_block_id_t)(-1)) {
+		bps_tree_tick_callback();
 		if (matras_is_read_view_created(&itr->view))
 			return false;
 		itr->block_id = tree->first_id;
@@ -2013,6 +2050,7 @@ bps_tree_iterator_next(const struct bps_tree *tree, struct bps_tree_iterator *it
 	struct bps_leaf *leaf = bps_tree_get_leaf_safe(tree, itr);
 	if (!leaf)
 		return false;
+	bps_tree_tick_callback();
 	itr->pos++;
 	if (itr->pos >= leaf->header.size) {
 		itr->block_id = leaf->next_id;
@@ -2031,10 +2069,15 @@ bps_tree_iterator_next(const struct bps_tree *tree, struct bps_tree_iterator *it
  * @param itr - pointer to tree iterator
  * @return - true on success, false if a resulted iterator is set to invalid
  */
+
+/*
+ * Supports quantums
+ */
 static inline bool
 bps_tree_iterator_prev(const struct bps_tree *tree, struct bps_tree_iterator *itr)
 {
 	if (itr->block_id == (bps_tree_block_id_t)(-1)) {
+		bps_tree_tick_callback();
 		if (matras_is_read_view_created(&itr->view))
 			return false;
 		itr->block_id = tree->last_id;
@@ -2044,6 +2087,7 @@ bps_tree_iterator_prev(const struct bps_tree *tree, struct bps_tree_iterator *it
 	struct bps_leaf *leaf = bps_tree_get_leaf_safe(tree, itr);
 	if (!leaf)
 		return false;
+	bps_tree_tick_callback();
 	if (itr->pos == 0) {
 		itr->block_id = leaf->prev_id;
 		itr->pos = (bps_tree_pos_t)(-1);
@@ -2094,6 +2138,7 @@ bps_tree_find(const struct bps_tree *tree, bps_tree_key_t key)
 	struct bps_block *block = bps_tree_root(tree);
 	bool exact = false;
 	for (bps_tree_block_id_t i = 0; i < tree->depth - 1; i++) {
+		bps_tree_tick_callback();
 		struct bps_inner *inner = (struct bps_inner *)block;
 		bps_tree_pos_t pos;
 		pos = bps_tree_find_ins_point_key(tree, inner->elems,
@@ -2239,6 +2284,7 @@ bps_tree_insert_first_elem(struct bps_tree *tree, bps_tree_elem_t new_elem)
 	struct bps_leaf *leaf = bps_tree_create_leaf(tree, &tree->root_id);
 	if (!leaf)
 		return -1;
+	bps_tree_tick_callback();
 	leaf->header.size = 1;
 	leaf->elems[0] = new_elem;
 	tree->first_id = tree->root_id;
@@ -2268,6 +2314,7 @@ bps_tree_collect_path(struct bps_tree *tree, bps_tree_elem_t new_elem,
 	bps_tree_block_id_t max_elem_block_id = (bps_tree_block_id_t)-1;
 	bps_tree_pos_t max_elem_pos = (bps_tree_pos_t)-1;
 	for (bps_tree_block_id_t i = 0; i < tree->depth - 1; i++) {
+		bps_tree_tick_callback();
 		struct bps_inner *inner = (struct bps_inner *)block;
 		bps_tree_pos_t pos;
 		if (*exact)
@@ -2359,6 +2406,7 @@ bps_tree_process_replace(struct bps_tree *tree,
 			 struct bps_leaf_path_elem *leaf_path_elem,
 			 bps_tree_elem_t new_elem, bps_tree_elem_t *replaced)
 {
+	bps_tree_tick_callback();
 	leaf_path_elem->block = (struct bps_leaf *)
 		bps_tree_touch_block(tree, leaf_path_elem->block_id);
 	struct bps_leaf *leaf = leaf_path_elem->block;
@@ -2367,9 +2415,11 @@ bps_tree_process_replace(struct bps_tree *tree,
 	if (replaced)
 		*replaced = leaf->elems[leaf_path_elem->insertion_point];
 
+	bps_tree_tick_callback();
 	leaf->elems[leaf_path_elem->insertion_point] = new_elem;
 	if (leaf_path_elem->insertion_point == leaf->header.size - 1) {
 		bps_tree_touch_leaf_path_max_elem(tree, leaf_path_elem);
+		bps_tree_tick_callback();
 		*leaf_path_elem->max_elem_copy =
 			leaf->elems[leaf->header.size - 1];
 	}
@@ -2482,10 +2532,12 @@ bps_tree_insert_into_leaf(struct bps_tree *tree,
 			  bps_tree_elem_t new_elem)
 {
 	/* exclusive behaviuor for debug checks */
+	bps_tree_tick_callback();
 	if (tree->root_id != (bps_tree_block_id_t) -1)
 		leaf_path_elem->block = (struct bps_leaf *)
 		bps_tree_touch_block(tree, leaf_path_elem->block_id);
 	struct bps_leaf *leaf = leaf_path_elem->block;
+	bps_tree_tick_callback();
 	bps_tree_pos_t pos = leaf_path_elem->insertion_point;
 
 	assert(pos >= 0);
@@ -2494,6 +2546,7 @@ bps_tree_insert_into_leaf(struct bps_tree *tree,
 
 	BPS_TREE_DATAMOVE(leaf->elems + pos + 1, leaf->elems + pos,
 			  leaf->header.size - pos, leaf, leaf);
+	bps_tree_tick_callback();
 	leaf->elems[pos] = new_elem;
 
 	if (pos == leaf->header.size) {
@@ -2514,6 +2567,7 @@ bps_tree_insert_into_inner(struct bps_tree *tree,
 			   bps_tree_elem_t max_elem)
 {
 	/* exclusive behaviuor for debug checks */
+	bps_tree_tick_callback();
 	if (tree->root_id != (bps_tree_block_id_t) -1)
 		inner_path_elem->block = (struct bps_inner *)
 		bps_tree_touch_block(tree, inner_path_elem->block_id);
@@ -2526,13 +2580,16 @@ bps_tree_insert_into_inner(struct bps_tree *tree,
 	if (pos < inner->header.size) {
 		BPS_TREE_DATAMOVE(inner->elems + pos + 1, inner->elems + pos,
 				  inner->header.size - pos - 1, inner, inner);
+		bps_tree_tick_callback();
 		inner->elems[pos] = max_elem;
 		BPS_TREE_DATAMOVE(inner->child_ids + pos + 1,
 				  inner->child_ids + pos,
 				  inner->header.size - pos, inner, inner);
 	} else {
-		if (pos > 0)
+		if (pos > 0) {
+			bps_tree_tick_callback();
 			inner->elems[pos - 1] = *inner_path_elem->max_elem_copy;
+		}
 		*inner_path_elem->max_elem_copy = max_elem;
 	}
 	inner->child_ids[pos] = block_id;
@@ -2548,10 +2605,12 @@ bps_tree_delete_from_leaf(struct bps_tree *tree,
 			  struct bps_leaf_path_elem *leaf_path_elem)
 {
 	/* exclusive behaviuor for debug checks */
+	bps_tree_tick_callback();
 	if (tree->root_id != (bps_tree_block_id_t) -1)
 		leaf_path_elem->block = (struct bps_leaf *)
 		bps_tree_touch_block(tree, leaf_path_elem->block_id);
 	struct bps_leaf *leaf = leaf_path_elem->block;
+	bps_tree_tick_callback();
 	bps_tree_pos_t pos = leaf_path_elem->insertion_point;
 
 	assert(pos >= 0);
@@ -2579,18 +2638,22 @@ bps_tree_delete_from_inner(struct bps_tree *tree,
 			   struct bps_inner_path_elem *inner_path_elem)
 {
 	/* exclusive behaviuor for debug checks */
+	bps_tree_tick_callback();
 	if (tree->root_id != (bps_tree_block_id_t) -1)
 		inner_path_elem->block = (struct bps_inner *)
 		bps_tree_touch_block(tree, inner_path_elem->block_id);
 	struct bps_inner *inner = inner_path_elem->block;
+	bps_tree_tick_callback();
 	bps_tree_pos_t pos = inner_path_elem->insertion_point;
 
 	assert(pos >= 0);
 	assert(pos < inner->header.size);
 
 	if (pos < inner->header.size - 1) {
+		bps_tree_tick_callback();
 		BPS_TREE_DATAMOVE(inner->elems + pos, inner->elems + pos + 1,
 				  inner->header.size - 2 - pos, inner, inner);
+		bps_tree_tick_callback();
 		BPS_TREE_DATAMOVE(inner->child_ids + pos,
 				  inner->child_ids + pos + 1,
 				  inner->header.size - 1 - pos, inner, inner);
@@ -6212,6 +6275,7 @@ bps_tree_debug_check_internal_functions(bool assertme)
 #undef bps_tree_debug_check_move_to_left_inner
 #undef bps_tree_debug_check_insert_and_move_to_right_inner
 #undef bps_tree_debug_check_insert_and_move_to_left_inner
+#undef bps_tree_tick_callback
 
 /* }}} */
 

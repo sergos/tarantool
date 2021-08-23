@@ -44,6 +44,7 @@
 #include "box/engine.h"
 #include "box/memtx_engine.h"
 #include "box/raft.h"
+#include "lib/quantum/quantum.h"
 
 static int
 lbox_ctl_wait_ro(struct lua_State *L)
@@ -134,6 +135,13 @@ lbox_ctl_set_on_shutdown_timeout(struct lua_State *L)
 	return 0;
 }
 
+static int
+lbox_print_quantum(struct lua_State *L)
+{
+	quantum_print();
+	return 0;
+}
+
 static const struct luaL_Reg lbox_ctl_lib[] = {
 	{"wait_ro", lbox_ctl_wait_ro},
 	{"wait_rw", lbox_ctl_wait_rw},
@@ -146,6 +154,7 @@ static const struct luaL_Reg lbox_ctl_lib[] = {
 	{"demote", lbox_ctl_demote},
 	{"is_recovery_finished", lbox_ctl_is_recovery_finished},
 	{"set_on_shutdown_timeout", lbox_ctl_set_on_shutdown_timeout},
+	{"print_quantum", lbox_print_quantum},
 	{NULL, NULL}
 };
 

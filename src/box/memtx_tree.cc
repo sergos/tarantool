@@ -41,6 +41,7 @@
 #include "memtx_tx.h"
 #include <qsort_arg.h>
 #include <small/mempool.h>
+#include "quantum/quantum.h"
 
 /**
  * Struct that is used as a key in BPS tree definition.
@@ -107,6 +108,22 @@ memtx_tree_data_is_equal(const struct memtx_tree_data_common *a,
 	return a->tuple == b->tuple;
 }
 
+static uint64_t memtx_tree_quantums = 0;
+
+static inline void
+memtx_tree_quantum_inc()
+{
+	++memtx_tree_quantums;
+}
+
+static inline void
+memtx_tree_quantum_add()
+{
+	quantum_add(memtx_tree_quantums);
+	memtx_tree_quantums = 0;
+}
+
+#define BPS_TREE_TICK_CALLBACK memtx_tree_quantum_inc
 #define BPS_TREE_NAME memtx_tree
 #define BPS_TREE_BLOCK_SIZE (512)
 #define BPS_TREE_EXTENT_SIZE MEMTX_EXTENT_SIZE
@@ -147,6 +164,7 @@ memtx_tree_data_is_equal(const struct memtx_tree_data_common *a,
 #undef BPS_TREE_IS_IDENTICAL
 #undef BPS_TREE_NO_DEBUG
 #undef bps_tree_arg_t
+#undef BPS_TREE_TICK_CALLBACK
 
 using namespace NS_NO_HINT;
 using namespace NS_USE_HINT;
@@ -308,6 +326,7 @@ tree_iterator_next_base(struct iterator *iterator, struct tuple **ret)
 	 * two tuples must lead to conflict.
 	 */
 	memtx_tx_track_gap(in_txn(), space, idx, *ret, ITER_GE, NULL, 0);
+	memtx_tree_quantum_add();
 	return 0;
 }
 
@@ -346,6 +365,7 @@ tree_iterator_prev_base(struct iterator *iterator, struct tuple **ret)
 	 */
 	memtx_tx_track_gap(in_txn(), space, idx, successor, ITER_LE, NULL, 0);
 	tuple_unref(successor);
+	memtx_tree_quantum_add();
 	return 0;
 }
 
@@ -397,6 +417,7 @@ tree_iterator_next_equal_base(struct iterator *iterator, struct tuple **ret)
 		memtx_tx_track_gap(in_txn(), space, idx, *ret, ITER_GE,
 				   NULL, 0);
 	}
+	memtx_tree_quantum_add();
 	return 0;
 }
 
@@ -448,6 +469,7 @@ tree_iterator_prev_equal_base(struct iterator *iterator, struct tuple **ret)
 				   NULL, 0);
 	}
 	tuple_unref(successor);
+	memtx_tree_quantum_add();
 	return 0;
 }
 
@@ -626,7 +648,7 @@ tree_iterator_start(struct iterator *iterator, struct tuple **ret)
 		it->current.tuple = *ret;
 		tuple_ref(it->current.tuple);
 	}
-
+	memtx_tree_quantum_add();
 	return 0;
 }
 
@@ -775,6 +797,7 @@ memtx_tree_index_random(struct index *base, uint32_t rnd, struct tuple **result)
 		(struct memtx_tree_index<USE_HINT> *)base;
 	struct memtx_tree_data<USE_HINT> *res = memtx_tree_random(&index->tree, rnd);
 	*result = res != NULL ? res->tuple : NULL;
+	memtx_tree_quantum_add();
 	return 0;
 }
 
@@ -818,6 +841,7 @@ memtx_tree_index_get(struct index *base, const char *key,
 	uint32_t mk_index = is_multikey ? (uint32_t)res->hint : 0;
 	*result = memtx_tx_tuple_clarify(txn, space, res->tuple, base,
 					 mk_index, is_rw);
+	memtx_tree_quantum_add();
 	return 0;
 }
 
@@ -883,6 +907,7 @@ memtx_tree_index_replace(struct index *base, struct tuple *old_tuple,
 		memtx_tree_delete(&index->tree, old_data);
 	}
 	*result = old_tuple;
+	memtx_tree_quantum_add();
 	return 0;
 }
 
@@ -939,6 +964,7 @@ memtx_tree_index_replace_multikey_one(struct memtx_tree_index<true> *index,
 		return -1;
 	}
 	*replaced_data = dup_data;
+	memtx_tree_quantum_add();
 	return 0;
 }
 
@@ -979,6 +1005,7 @@ memtx_tree_index_replace_multikey_rollback(struct memtx_tree_index<true> *index,
 		data.hint = i;
 		memtx_tree_delete_value(&index->tree, data, NULL);
 	}
+	memtx_tree_quantum_add();
 }
 
 /**
@@ -1081,6 +1108,7 @@ memtx_tree_index_replace_multikey(struct index *base, struct tuple *old_tuple,
 			memtx_tree_delete_value(&index->tree, data, NULL);
 		}
 	}
+	memtx_tree_quantum_add();
 	return 0;
 }
 
@@ -1139,6 +1167,7 @@ memtx_tree_func_index_replace_rollback(struct memtx_tree_index<true> *index,
 	}
 	rlist_foreach_entry(entry, old_keys, link)
 		memtx_tree_insert(&index->tree, entry->key, NULL, NULL);
+	memtx_tree_quantum_add();
 }
 
 /**
@@ -1280,6 +1309,7 @@ memtx_tree_func_index_replace(struct index *base, struct tuple *old_tuple,
 	rc = 0;
 end:
 	region_truncate(region, region_svp);
+	memtx_tree_quantum_add();
 	return rc;
 }
 
