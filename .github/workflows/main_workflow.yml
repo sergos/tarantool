@@ -1,0 +1,12 @@
+name: main_workflow
+
+on:
+  - pull_request
+  - push
+
+jobs:
+  main-job:
+    name: main Step
+    runs-on: ubuntu-latest
+    steps:
+      - run: env
