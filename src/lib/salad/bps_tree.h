@@ -1345,18 +1345,18 @@ bps_tree_random(const struct bps_tree *tree, size_t rnd)
 	if (tree->root_id == (bps_tree_block_id_t)(-1))
 		return 0;
 
-	bps_tree_tick_callback();
 	struct bps_block *block = bps_tree_root(tree);
 
 	for (bps_tree_block_id_t i = 0; i < tree->depth - 1; i++) {
 		struct bps_inner *inner = (struct bps_inner *)block;
+		bps_tree_tick_callback();
 		bps_tree_pos_t pos = rnd % inner->header.size;
 		rnd /= inner->header.size;
-		bps_tree_tick_callback();
 		block = bps_tree_restore_block(tree, inner->child_ids[pos]);
 	}
 
 	struct bps_leaf *leaf = (struct bps_leaf *)block;
+	bps_tree_tick_callback();
 	bps_tree_pos_t pos = rnd % leaf->header.size;
 	return leaf->elems + pos;
 }
@@ -1594,6 +1594,7 @@ bps_tree_get_leaf_safe(const struct bps_tree *tree,
 		struct bps_garbage *garbage = (struct bps_garbage *)block;
 		while (garbage->next_leaf_id != (bps_tree_block_id_t)(-1)
 		       && garbage->next_leaf_id != itr->block_id) {
+			// mb_delete
 			bps_tree_tick_callback();
 			block = bps_tree_restore_block_ver(tree,
 				garbage->next_leaf_id, &itr->view);
@@ -1732,7 +1733,6 @@ bps_tree_lower_bound(const struct bps_tree *tree, bps_tree_key_t key,
 	struct bps_block *block = bps_tree_root(tree);
 	bps_tree_block_id_t block_id = tree->root_id;
 	for (bps_tree_block_id_t i = 0; i < tree->depth - 1; i++) {
-		bps_tree_tick_callback();
 		struct bps_inner *inner = (struct bps_inner *)block;
 		bps_tree_pos_t pos;
 		pos = bps_tree_find_ins_point_key(tree, inner->elems,
@@ -1785,7 +1785,6 @@ bps_tree_upper_bound(const struct bps_tree *tree, bps_tree_key_t key,
 	struct bps_block *block = bps_tree_root(tree);
 	bps_tree_block_id_t block_id = tree->root_id;
 	for (bps_tree_block_id_t i = 0; i < tree->depth - 1; i++) {
-		bps_tree_tick_callback();
 		struct bps_inner *inner = (struct bps_inner *)block;
 		bps_tree_pos_t pos;
 		pos = bps_tree_find_after_ins_point_key(tree, inner->elems,
@@ -1842,7 +1841,6 @@ bps_tree_lower_bound_elem(const struct bps_tree *tree, bps_tree_elem_t key,
 	struct bps_block *block = bps_tree_root(tree);
 	bps_tree_block_id_t block_id = tree->root_id;
 	for (bps_tree_block_id_t i = 0; i < tree->depth - 1; i++) {
-		bps_tree_tick_callback();
 		struct bps_inner *inner = (struct bps_inner *)block;
 		bps_tree_pos_t pos;
 		pos = bps_tree_find_ins_point_elem(tree, inner->elems,
@@ -1896,7 +1894,6 @@ bps_tree_upper_bound_elem(const struct bps_tree *tree, bps_tree_elem_t key,
 	struct bps_block *block = bps_tree_root(tree);
 	bps_tree_block_id_t block_id = tree->root_id;
 	for (bps_tree_block_id_t i = 0; i < tree->depth - 1; i++) {
-		bps_tree_tick_callback();
 		struct bps_inner *inner = (struct bps_inner *)block;
 		bps_tree_pos_t pos;
 		pos = bps_tree_find_after_ins_point_elem(tree, inner->elems,
@@ -1974,11 +1971,9 @@ bps_tree_approximate_count(const struct bps_tree *tree, bps_tree_key_t key)
 			result += upper_pos;
 		}
 
-		bps_tree_tick_callback();
 		bps_tree_block_id_t lower_block_id =
 			lower_inner->child_ids[lower_pos];
 		lower_block = bps_tree_restore_block(tree, lower_block_id);
-		bps_tree_tick_callback();
 		bps_tree_block_id_t upper_block_id =
 			upper_inner->child_ids[upper_pos];
 		upper_block = bps_tree_restore_block(tree, upper_block_id);
