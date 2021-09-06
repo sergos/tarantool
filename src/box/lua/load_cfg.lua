@@ -108,6 +108,7 @@ local default_cfg = {
     feedback_interval     = 3600,
     net_msg_max           = 768,
     sql_cache_size        = 5 * 1024 * 1024,
+    quantum_limit         = {soft = 4000, hard = 10000000000},
 }
 
 -- cfg variables which are covered by modules
@@ -213,6 +214,7 @@ local template_cfg = {
     feedback_interval     = ifdef_feedback('number'),
     net_msg_max           = 'number',
     sql_cache_size        = 'number',
+    quantum_limit         = 'table',
 }
 
 local function normalize_uri(port)
@@ -333,6 +335,7 @@ local dynamic_cfg = {
     replicaset_uuid         = check_replicaset_uuid,
     net_msg_max             = private.cfg_set_net_msg_max,
     sql_cache_size          = private.cfg_set_sql_cache_size,
+    quantum_limit           = private.cfg_set_quantum_limit,
 }
 
 ifdef_feedback = nil -- luacheck: ignore
@@ -414,6 +417,7 @@ local dynamic_cfg_skip_at_load = {
     replicaset_uuid         = true,
     net_msg_max             = true,
     readahead               = true,
+    quantum_limit           = true,
 }
 
 local function convert_gb(size)

@@ -396,6 +396,13 @@ lbox_cfg_set_crash(struct lua_State *L)
 	return 0;
 }
 
+static int
+lbox_cfg_set_quantum_limit(struct lua_State *L)
+{
+	printf("lbox_cfg_set_quantum_limit (cfg.cc) is not implemented yet\n");
+	return 0;
+}
+
 void
 box_lua_cfg_init(struct lua_State *L)
 {
@@ -435,6 +442,7 @@ box_lua_cfg_init(struct lua_State *L)
 		{"cfg_set_net_msg_max", lbox_cfg_set_net_msg_max},
 		{"cfg_set_sql_cache_size", lbox_set_prepared_stmt_cache_size},
 		{"cfg_set_crash", lbox_cfg_set_crash},
+		{"cfg_set_quantum_limit", lbox_cfg_set_quantum_limit},
 		{NULL, NULL}
 	};
 
