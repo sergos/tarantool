@@ -5,7 +5,7 @@ local test = tap.test('errno')
 local date = require('datetime')
 local ffi = require('ffi')
 
-test:plan(14)
+test:plan(21)
 
 -- minimum supported date - -5879610-06-22
 local MIN_DATE_YEAR = -5879610
@@ -16,15 +16,22 @@ local MAX_DATE_YEAR = 5879611
 local MAX_DATE_MONTH = 7
 local MAX_DATE_DAY = 11
 
-local incompat_types = 'incompatible types for comparison'
+local incompat_types = 'incompatible types for datetime comparison'
+local incompat_int_types = 'incompatible types for interval comparison'
 local only_integer_ts = 'only integer values allowed in timestamp'..
                         ' if nsec, usec, or msecs provided'
 local only_one_of = 'only one of nsec, usec or msecs may be defined'..
                     ' simultaneously'
+local only_int_ival = 'only integer values allowed in interval seconds '..
+                      'if nsec, usec, or msecs provided'
 local timestamp_and_ymd = 'timestamp is not allowed if year/month/day provided'
 local timestamp_and_hms = 'timestamp is not allowed if hour/min/sec provided'
 local str_or_num_exp = 'tzoffset: string or number expected, but received'
 local numeric_exp = 'numeric value expected, but received '
+local add_object_expected = ('%s - object expected'):format('datetime.add')
+local sub_object_expected = ('%s - object expected'):format('datetime.sub')
+local expected_interval_but = 'expected interval, but received'
+local expected_datetime_but = 'expected datetime or interval, but received'
 
 -- various error message generators
 local function exp_datetime(name, value)
@@ -521,6 +528,372 @@ test:test("__index functions()", function(test)
     test:is(ts.nsec, 123000000, 'ts.nsec')
     test:is(ts.usec, 123000, 'ts.usec')
     test:is(ts.msec, 123, 'ts.msec')
+end)
+
+test:test("Time interval tostring()", function(test)
+    test:plan(19)
+    local ivals = {
+        {{sec = 1}, '+1 seconds'},
+        {{sec = 49}, '+49 seconds'},
+        {{min = 10, sec = 30}, '+10 minutes, 30 seconds'},
+        {{hour = 1, min = 59, sec = 10}, '+1 hours, 59 minutes, 10 seconds'},
+        {{hour = 12, min = 10, sec = 30}, '+12 hours, 10 minutes, 30 seconds'},
+        {{day = 2, hour = 8, min = 10, sec = 30},
+         '+2 days, 8 hours, 10 minutes, 30 seconds'},
+        {{week = 10, hour = 8, min = 10, sec = 30},
+         '+70 days, 8 hours, 10 minutes, 30 seconds'},
+        {{month = 20, week = 10, hour = 8, min = 10, sec = 30},
+         '+20 months, +70 days, 8 hours, 10 minutes, 30 seconds'},
+        {{year = 10, month = 20, week = 10, hour = 8, min = 10, sec = 30},
+         '+10 years, +20 months, +70 days, 8 hours, 10 minutes, 30 seconds'},
+        {{year = 1e4, month = 20, week = 10, hour = 8, min = 10, sec = 30},
+         '+10000 years, +20 months, +70 days, 8 hours, 10 minutes, 30 seconds'},
+        {{year = 5e6, month = 20, week = 10, hour = 8, min = 10, sec = 30},
+         '+5000000 years, +20 months, +70 days, 8 hours, 10 minutes, 30 seconds'},
+        {{year = -5e6, month = -20, week = -10, hour = -8, min = -10, sec = -30},
+         '-5000000 years, -20 months, -70 days, -8 hours, -10 minutes, -30 seconds'},
+        {{month = -20, week = -10, hour = -8, min = -10, sec = -30},
+         '-20 months, -70 days, -8 hours, -10 minutes, -30 seconds'},
+        {{week = -10, hour = -8, min = -10, sec = -30},
+         '-70 days, -8 hours, -10 minutes, -30 seconds'},
+        {{hour = -12, min = -10, sec = -30}, '-12 hours, -10 minutes, -30 seconds'},
+        {{hour = -1, min = -59, sec = -10}, '-1 hours, -59 minutes, -10 seconds'},
+        {{min = -10, sec = -30}, '-10 minutes, -30 seconds'},
+        {{sec = -49}, '-49 seconds'},
+        {{sec = -1}, '-1 seconds'},
+    }
+    for _, row in pairs(ivals) do
+        local ival_init, str = unpack(row)
+        local ival = date.interval.new(ival_init)
+        test:is(tostring(ival), str, str)
+    end
+end)
+
+test:test("Time interval comparisons", function(test)
+    test:plan(36)
+    -- check empty arguments
+    local int1 = date.interval.new()
+    test:is(int1.sec, 0, "ts.sec == 0")
+    test:is(int1.nsec, 0, "ts.nsec == 0")
+    test:is(int1.year, 0, "ts.year == 0")
+    test:is(int1.month, 0, "ts.month == 0")
+    test:is(tostring(int1), "0 seconds", "tostring(int1)")
+    -- check empty table
+    local int2 = date.interval.new{}
+    test:is(int2.sec, 0, "ts.sec ==0")
+    test:is(int2.nsec, 0, "ts.nsec == 0")
+    test:is(int2.year, 0, "ts.year == 0")
+    test:is(int2.month, 0, "ts.month == 0")
+    test:is(tostring(int2), "0 seconds", "tostring(int2)")
+    -- check their equivalence
+    test:is(int1, int2, "int1 == int2")
+    test:is(int1 ~= int2, false, "not int1 != int2")
+
+    test:isnt(int1, nil, "int1 != {}")
+    test:isnt(int1, {}, "int1 != {}")
+    test:isnt(int1, "1970-01-01T00:00:00Z", "int1 != '1970-01-01T00:00:00Z'")
+    test:isnt(int1, 19700101, "int1 != 19700101")
+
+    test:isnt(nil, int1, "{} ~= int1")
+    test:isnt({}, int1 ,"{} ~= int1")
+    test:isnt("1970-01-01T00:00:00Z", int1, "'1970-01-01T00:00' ~= int1")
+    test:isnt(19700101, int1, "int1 ~= int1")
+
+    test:is(int1 < int2, false, "not int1 < int2")
+    test:is(int1 > int2, false, "not int1 < int2")
+    test:is(int1 <= int2, true, "not int1 < int2")
+    test:is(int1 >= int2, true, "not int1 < int2")
+
+    -- check comparison errors -- ==, ~= not raise errors, other
+    -- comparison operators should raise
+    assert_raises(test, incompat_int_types, function() return int1 < nil end)
+    assert_raises(test, incompat_int_types, function() return int1 < 123 end)
+    assert_raises(test, incompat_int_types, function() return int1 < '1970-01-01' end)
+    assert_raises(test, incompat_int_types, function() return int1 <= nil end)
+    assert_raises(test, incompat_int_types, function() return int1 <= 123 end)
+    assert_raises(test, incompat_int_types, function() return int1 <= '1970-01-01' end)
+    assert_raises(test, incompat_int_types, function() return int1 > nil end)
+    assert_raises(test, incompat_int_types, function() return int1 > 123 end)
+    assert_raises(test, incompat_int_types, function() return int1 > '1970-01-01' end)
+    assert_raises(test, incompat_int_types, function() return int1 >= nil end)
+    assert_raises(test, incompat_int_types, function() return int1 >= 123 end)
+    assert_raises(test, incompat_int_types, function() return int1 >= '1970-01-01' end)
+end)
+
+test:test("Time interval __index fields", function(test)
+    test:plan(11)
+
+    local ival = date.interval.new{year = 12345, month = 123, week = 100,
+                                   day = 45, hour = 48, min = 3, sec = 1,
+                                   nsec = 12345678}
+    test:is(tostring(ival), '+12345 years, +123 months, +747 days, 0 hours,'..
+            ' 3 minutes, 1.01234568 seconds', '__tostring')
+
+    test:is(ival.nsec, 12345678, 'nsec')
+    test:is(ival.usec, 12345, 'usec')
+    test:is(ival.msec, 12, 'msec')
+
+    test:is(ival.year, 12345, 'interval.year')
+    test:is(ival.month, 123, 'interval.month')
+    test:is(ival.week, 106, 'interval.week')
+    test:is(ival.day, 747, 'interval.day')
+    test:is(ival.hour, 17928, 'interval.hour')
+    test:is(ival.min, 1075683, 'interval.min')
+    test:is(ival.sec, 64540981, 'interval.sec')
+end)
+
+test:test("Time interval operations", function(test)
+    test:plan(66)
+
+    local ival_new = date.interval.new
+
+    -- check arithmetic with leap dates
+    local base_leap_date = { year = 1972, month = 2, day = 29}
+    local tadd = date.new(base_leap_date)
+    local tsub = date.new(base_leap_date)
+    local leap_ivals_check = {
+        {{year = 1, month = 2}, '1973-05-01T00:00:00Z', '1971-01-01T00:00:00Z'},
+        {{year = 2, month = 3}, '1975-08-01T00:00:00Z', '1968-10-01T00:00:00Z'},
+        {{year = -1}, '1974-08-01T00:00:00Z', '1969-10-02T00:00:00Z'},
+        {{year = -1}, '1973-08-01T00:00:00Z', '1970-10-02T00:00:00Z'},
+    }
+    -- check :add{}
+    for _, row in pairs(leap_ivals_check) do
+        local delta, sadd, ssub = unpack(row)
+        test:is(tostring(tadd:add(delta)), sadd,
+                ('add delta to %s'):format(sadd))
+        test:is(tostring(tsub:sub(delta)), ssub,
+                ('sub delta to %s'):format(ssub))
+    end
+    -- check t + interval
+    tadd = date.new(base_leap_date)
+    tsub = date.new(base_leap_date)
+    for _, row in pairs(leap_ivals_check) do
+        local delta, sadd, ssub = unpack(row)
+        tadd = tadd + ival_new(delta)
+        test:is(tostring(tadd), sadd, ('%s: t + delta'):format(sadd))
+        tsub = tsub - ival_new(delta)
+        test:is(tostring(tsub), ssub, ('%s: t - delta'):format(ssub))
+    end
+
+    -- check average, not leap dates
+    local base_non_leap_date = {year = 1970, month = 1, day = 8}
+    local non_leap_ivals_check = {
+        {{year = 1, month = 2}, '1971-03-08T00:00:00Z', '1968-11-08T00:00:00Z'},
+        {{week = 10}, '1971-05-17T00:00:00Z', '1968-08-30T00:00:00Z'},
+        {{day = 15}, '1971-06-01T00:00:00Z', '1968-08-15T00:00:00Z'},
+        {{hour = 2}, '1971-06-01T02:00:00Z', '1968-08-14T22:00:00Z'},
+        {{min = 15}, '1971-06-01T02:15:00Z', '1968-08-14T21:45:00Z'},
+        {{sec = 48.123456}, '1971-06-01T02:15:48.123455999Z',
+         '1968-08-14T21:44:11.876544Z'},
+        {{nsec = 2e9}, '1971-06-01T02:15:50.123455999Z',
+         '1968-08-14T21:44:09.876544Z'},
+        {{hour = 12, min = 600, sec = 1024}, '1971-06-02T00:32:54.123455999Z',
+         '1968-08-13T23:27:05.876544Z'},
+    }
+
+    -- check :add
+    tadd = date.new(base_non_leap_date)
+    tsub = date.new(base_non_leap_date)
+    for _, row in pairs(non_leap_ivals_check) do
+        local delta, sadd, ssub = unpack(row)
+        test:is(tostring(tadd:add(delta)), sadd,
+                ('add delta to %s'):format(sadd))
+        test:is(tostring(tsub:sub(delta)), ssub,
+                ('sub delta to %s'):format(ssub))
+    end
+
+    -- check t + interval
+    tadd = date.new(base_non_leap_date)
+    tsub = date.new(base_non_leap_date)
+    for _, row in pairs(non_leap_ivals_check) do
+        local delta, sadd, ssub = unpack(row)
+        tadd = tadd + ival_new(delta)
+        test:is(tostring(tadd), sadd, ('%s: t + delta'):format(sadd))
+        tsub = tsub - ival_new(delta)
+        test:is(tostring(tsub), ssub, ('%s: t - delta'):format(ssub))
+    end
+    local specific_errors = {
+        {only_one_of, { nsec = 123456, usec = 123}},
+        {only_one_of, { nsec = 123456, msec = 123}},
+        {only_one_of, { usec = 123, msec = 123}},
+        {only_one_of, { nsec = 123456, usec = 123, msec = 123}},
+        {only_int_ival, { sec = 12345.125, usec = 123}},
+        {only_int_ival, { sec = 12345.125, msec = 123}},
+        {only_int_ival, { sec = 12345.125, nsec = 123}},
+    }
+    for _, row in pairs(specific_errors) do
+        local err_msg, obj = unpack(row)
+        assert_raises(test, err_msg, function() return tadd:add(obj) end)
+        assert_raises(test, err_msg, function() return tsub:sub(obj) end)
+    end
+    assert_raises(test, add_object_expected, function() tadd:add('bogus') end)
+    assert_raises(test, add_object_expected, function() tadd:add(123) end)
+    assert_raises(test, sub_object_expected, function() tsub:sub('bogus') end)
+    assert_raises(test, sub_object_expected, function() tsub:sub(123) end)
+end)
+
+test:test("Months intervals with last days", function(test)
+    test:plan(122)
+    local month1 = date.interval.new{month = 1}
+    local base_day = date.new{year = 1998, month = 12, day = 31}
+    local current = base_day
+    test:is(current, date.new{year = 1998, month = 12, day = -1}, "day = -1")
+
+    -- check the fact that last day of month will snap
+    -- forward moves by 1 month
+    for year=1999,2003 do
+        for month=1,12 do
+            local month_last_day = date.new{year = year, month = month, day = -1}
+            current = current + month1
+            test:is(month_last_day, current, ('%s: last day of %d/%d'):
+                    format(current, year, month))
+        end
+    end
+
+    -- backward moves by 1 month
+    current = date.new{year = 2004, month = 1, day = 31}
+    test:is(current, date.new{year = 2004, month = 1, day = -1}, "day #2 = -1")
+
+    for year=2003,1999,-1 do
+        for month=12,1,-1 do
+            local month_last_day = date.new{year = year, month = month, day = -1}
+            current = current - month1
+            test:is(month_last_day, current, ('%s: last day of %d/%d'):
+                    format(current, year, month))
+        end
+    end
+end)
+
+local function catchadd(A, B)
+    return pcall(function() return A + B end)
+end
+
+--[[
+Matrix of addition operands eligibility and their result type
+
+|                 |  datetime | interval |
++-----------------+-----------+----------+
+| datetime        |           | datetime |
+| interval        |  datetime | interval |
+]]
+test:test("Matrix of allowed time and interval additions", function(test)
+    test:plan(32)
+
+    -- check arithmetic with leap dates
+    local T1970 = date.new{year = 1970, month = 1, day = 1}
+    local T2000 = date.new{year = 2000, month = 1, day = 1}
+    local I1 = date.interval.new{day = 1}
+    local M2 = date.interval.new{month = 2}
+    local M10 = date.interval.new{month = 10}
+    local Y1 = date.interval.new{year = 1}
+    local Y5 = date.interval.new{year = 5}
+
+    test:is(catchadd(T1970, I1), true, "status: T + I")
+    test:is(catchadd(T1970, M2), true, "status: T + M")
+    test:is(catchadd(T1970, Y1), true, "status: T + Y")
+    test:is(catchadd(T1970, T2000), false, "status: T + T")
+    test:is(catchadd(I1, T1970), true, "status: I + T")
+    test:is(catchadd(M2, T1970), true, "status: M + T")
+    test:is(catchadd(Y1, T1970), true, "status: Y + T")
+    test:is(catchadd(I1, Y1), true, "status: I + Y")
+    test:is(catchadd(M2, Y1), true, "status: M + Y")
+    test:is(catchadd(I1, Y1), true, "status: I + Y")
+    test:is(catchadd(Y5, M10), true, "status: Y + M")
+    test:is(catchadd(Y5, I1), true, "status: Y + I")
+    test:is(catchadd(Y5, Y1), true, "status: Y + Y")
+
+    test:is(tostring(T1970 + I1), "1970-01-02T00:00:00Z", "value: T + I")
+    test:is(tostring(T1970 + M2), "1970-03-01T00:00:00Z", "value: T + M")
+    test:is(tostring(T1970 + Y1), "1971-01-01T00:00:00Z", "value: T + Y")
+    test:is(tostring(I1 + T1970), "1970-01-02T00:00:00Z", "value: I + T")
+    test:is(tostring(M2 + T1970), "1970-03-01T00:00:00Z", "value: M + T")
+    test:is(tostring(Y1 + T1970), "1971-01-01T00:00:00Z", "value: Y + T")
+    test:is(tostring(Y5 + Y1), "+6 years", "Y + Y")
+
+    assert_raises_like(test, expected_interval_but,
+                       function() return T1970 + 123 end)
+    assert_raises_like(test, expected_interval_but,
+                       function() return T1970 + {} end)
+    assert_raises_like(test, expected_interval_but,
+                       function() return T1970 + "0" end)
+
+    local max_date = date.new{year = MAX_DATE_YEAR - 1}
+    local new_ival = date.interval.new
+    test:is(catchadd(max_date, new_ival{year = 1}), true, "max + 1y")
+    test:is(catchadd(max_date, new_ival{year = 2}), false, "max + 2y")
+    test:is(catchadd(max_date, new_ival{year = 10}), false, "max + 10y")
+    test:is(catchadd(max_date, new_ival{month = 1}), true, "max + 1m")
+    test:is(catchadd(max_date, new_ival{month = 6}), true, "max + 6m")
+    test:is(catchadd(max_date, new_ival{month = 12}), true, "max + 12m")
+    test:is(catchadd(max_date, new_ival{month = 24}), false, "max + 24m")
+    test:is(catchadd(max_date, new_ival{week = 10}), true, "max + 10wk")
+    test:is(catchadd(max_date, new_ival{week = 100}), false, "max + 100wk")
+end)
+
+local function catchsub_status(A, B)
+    return pcall(function() return A - B end)
+end
+
+--[[
+Matrix of subtraction operands eligibility and their result type
+
+|                 |  datetime | interval |
++-----------------+-----------+----------+
+| datetime        |  interval | datetime |
+| interval        |           | interval |
+]]
+test:test("Matrix of allowed time and interval subtractions", function(test)
+    test:plan(30)
+
+    -- check arithmetic with leap dates
+    local T1970 = date.new{year = 1970, month = 1, day = 1}
+    local T2000 = date.new{year = 2000, month = 1, day = 1}
+    local I1 = date.interval.new{day = 1}
+    local M2 = date.interval.new{month = 2}
+    local M10 = date.interval.new{month = 10}
+    local Y1 = date.interval.new{year = 1}
+    local Y5 = date.interval.new{year = 5}
+
+    test:is(catchsub_status(T1970, I1), true, "status: T - I")
+    test:is(catchsub_status(T1970, M2), true, "status: T - M")
+    test:is(catchsub_status(T1970, Y1), true, "status: T - Y")
+    test:is(catchsub_status(T1970, T2000), true, "status: T - T")
+    test:is(catchsub_status(I1, T1970), false, "status: I - T")
+    test:is(catchsub_status(M2, T1970), false, "status: M - T")
+    test:is(catchsub_status(Y1, T1970), false, "status: Y - T")
+    test:is(catchsub_status(I1, Y1), true, "status: I - Y")
+    test:is(catchsub_status(M2, Y1), true, "status: M - Y")
+    test:is(catchsub_status(I1, Y1), true, "status: I - Y")
+    test:is(catchsub_status(Y5, M10), true, "status: Y - M")
+    test:is(catchsub_status(Y5, I1), true, "status: Y - I")
+    test:is(catchsub_status(Y5, Y1), true, "status: Y - Y")
+
+    test:is(tostring(T1970 - I1), "1969-12-31T00:00:00Z", "value: T - I")
+    test:is(tostring(T1970 - M2), "1969-11-01T00:00:00Z", "value: T - M")
+    test:is(tostring(T1970 - Y1), "1969-01-01T00:00:00Z", "value: T - Y")
+    test:is(tostring(T1970 - T2000), "-10957 days, 0 hours, 0 minutes, -0 seconds",
+            "value: T - T")
+    test:is(tostring(Y5 - Y1), "+4 years", "value: Y - Y")
+
+    assert_raises_like(test, expected_datetime_but,
+                       function() return T1970 - 123 end)
+    assert_raises_like(test, expected_datetime_but,
+                       function() return T1970 - {} end)
+    assert_raises_like(test, expected_datetime_but,
+                       function() return T1970 - "0" end)
+
+    local min_date = date.new{year = MIN_DATE_YEAR + 1}
+    local new_ival = date.interval.new
+    test:is(catchsub_status(min_date, new_ival{year = 1}), false, "min - 1y")
+    test:is(catchsub_status(min_date, new_ival{year = 2}), false, "min - 2y")
+    test:is(catchsub_status(min_date, new_ival{year = 10}), false, "min - 10y")
+    test:is(catchsub_status(min_date, new_ival{month = 1}), true, "min - 1m")
+    test:is(catchsub_status(min_date, new_ival{month = 6}), true, "min - 6m")
+    test:is(catchsub_status(min_date, new_ival{month = 12}), false, "min - 12m")
+    test:is(catchsub_status(min_date, new_ival{month = 24}), false, "min - 24m")
+    test:is(catchsub_status(min_date, new_ival{week = 10}), true, "min - 10wk")
+    test:is(catchsub_status(min_date, new_ival{week = 100}), false, "min - 100wk")
 end)
 
 test:test("totable{}", function(test)
