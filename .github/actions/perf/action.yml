@@ -20,6 +20,9 @@ runs:
       run: |
           set -x
           ${CI_MAKE} perf_clone_benchs_repo
+          cd bench-run
+          git checkout VitaliyaIoffe/tcph-fix-patch
+          cd ..
           docker build ${DOCKER_NETWORK_ARG} \
             --add-host ${{ env.HOSTNAME }}:127.0.0.1 \
             -t ${IMAGE_PERF} \
