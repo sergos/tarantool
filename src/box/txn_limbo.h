@@ -31,6 +31,7 @@
  */
 #include "small/rlist.h"
 #include "vclock/vclock.h"
+#include "latch.h"
 
 #include <stdint.h>
 
@@ -108,6 +109,12 @@ struct txn_limbo {
 	 * LSNs in their vclock components.
 	 */
 	uint32_t owner_id;
+	/**
+	 * To order limbo operations. Due to cooperative
+	 * multitasking it is possible that several operations
+	 * over limbo get running simultaneously.
+	 */
+	struct latch latch;
 	/**
 	 * Condition to wait for completion. It is supposed to be
 	 * signaled when the synchro parameters change. Allowing
@@ -189,6 +196,130 @@ struct txn_limbo {
 extern struct txn_limbo txn_limbo;
 
 static inline bool
+txn_limbo_is_locked(const struct txn_limbo *limbo)
+{
+	return latch_is_locked(&limbo->latch);
+}
+
+/* Uncomment the line to trace locking ops */
+#define TRACE_TXN_LIMBO_LOCK
+
+#ifdef TRACE_TXN_LIMBO_LOCK
+static inline void
+trace_txn_limbo_lock(const char *prefix, const struct txn_limbo *limbo,
+		     const struct fiber *f, const char *caller_func,
+		     int caller_line)
+{
+	const struct latch *l = &limbo->latch;
+	const struct fiber *owner = l->owner;
+
+	say_info("%s: %s:%d fiber %s:%lld owner %s:%lld nested %d",
+		 prefix, caller_func, caller_line, f->name,
+		 (long long)f->fid, owner ? owner->name : "-",
+		 owner ? (long long)owner->fid : (long long)0,
+		 f == owner);
+}
+
+static inline void
+trace_txn_limbo_unlock(const char *prefix, const struct txn_limbo *limbo,
+		       const struct fiber *f, const char *caller_func,
+		       int caller_line, bool nested)
+{
+	const struct latch *l = &limbo->latch;
+	const struct fiber *owner = l->owner;
+
+	if (nested)
+		assert(f == owner);
+
+	say_info("%s: %s:%d fiber %s:%lld owner %s:%lld nested %d match %d",
+		 prefix, caller_func, caller_line, f->name,
+		 (long long)f->fid, owner ? owner->name : "-",
+		 owner ? (long long)owner->fid : (long long)0,
+		 nested, f == owner);
+}
+
+#else /* !TRACE_TXN_LIMBO_LOCK */
+
+static inline void
+trace_txn_limbo_lock(const char *prefix, const struct txn_limbo *limbo,
+		     const struct fiber *f, const char *caller_func,
+		     int caller_line)
+{
+	(void)prefix;
+	(void)limbo;
+	(void)f;
+	(void)caller_func;
+	(void)caller_line;
+}
+
+static inline void
+trace_txn_limbo_unlock(const char *prefix, const struct txn_limbo *limbo,
+		       const struct fiber *f, const char *caller_func,
+		       int caller_line, bool nested)
+{
+	(void)prefix;
+	(void)limbo;
+	(void)f;
+	(void)caller_func;
+	(void)caller_line;
+	(void)nested;
+}
+#endif /* !TRACE_TXN_LIMBO_LOCK */
+
+/**
+ * Lock limbo in exclusive way.
+ */
+#define txn_limbo_lock_ex(limbo)					\
+do {									\
+	trace_txn_limbo_lock("txn_limbo_lock_ex", limbo, fiber(),	\
+			     __func__, __LINE__);			\
+	latch_lock(&(limbo)->latch);					\
+} while (0)
+
+/**
+ * Unlock exclusively locked limbo.
+ */
+#define txn_limbo_unlock_ex(limbo)					\
+do {									\
+	trace_txn_limbo_unlock("txn_limbo_unlock_ex", limbo, fiber(),	\
+			       __func__, __LINE__, false);		\
+	latch_unlock(&(limbo)->latch);					\
+} while (0)
+
+/**
+ * Lock the limbo. In case if same fiber tries to lock in recursive way,
+ * only first call get real lock.
+ *
+ * Note that there is no any lock dependency detector behind thus it is
+ * up to a caller to provide correct lock/unlock calls.
+ *
+ * Same time local @a ____skip_lock is declared inside thus there must
+ * be no two or more txn_limbo_lock() calls inside single function.
+ */
+#define txn_limbo_lock(limbo)						\
+	bool ____skip_lock = false;					\
+do {									\
+	trace_txn_limbo_lock("txn_limbo_lock", limbo, fiber(),		\
+			     __func__, __LINE__);			\
+	if ((limbo)->latch.owner == fiber())				\
+		____skip_lock = true;					\
+	else								\
+		latch_lock(&(limbo)->latch);				\
+} while (0)
+
+/**
+ * Unlock the limbo.
+ */
+#define txn_limbo_unlock(limbo)						\
+do {									\
+	trace_txn_limbo_unlock("txn_limbo_unlock", limbo, fiber(),	\
+			       __func__, __LINE__,			\
+			       ____skip_lock);				\
+	if (!____skip_lock)						\
+		latch_unlock(&(limbo)->latch);				\
+} while (0)
+
+static inline bool
 txn_limbo_is_empty(struct txn_limbo *limbo)
 {
 	return rlist_empty(&limbo->queue);
@@ -197,14 +328,24 @@ txn_limbo_is_empty(struct txn_limbo *limbo)
 bool
 txn_limbo_is_ro(struct txn_limbo *limbo);
 
+static inline uint64_t
+txn_limbo_replica_term_locked(struct txn_limbo *limbo, uint32_t replica_id)
+{
+	assert(txn_limbo_is_locked(limbo));
+	return vclock_get(&limbo->promote_term_map, replica_id);
+}
+
 /**
  * Return the latest term as seen in PROMOTE requests from instance with id
  * @a replica_id.
  */
 static inline uint64_t
-txn_limbo_replica_term(const struct txn_limbo *limbo, uint32_t replica_id)
+txn_limbo_replica_term(struct txn_limbo *limbo, uint32_t replica_id)
 {
-	return vclock_get(&limbo->promote_term_map, replica_id);
+	txn_limbo_lock(limbo);
+	uint64_t term = txn_limbo_replica_term_locked(limbo, replica_id);
+	txn_limbo_unlock(limbo);
+	return term;
 }
 
 /**
@@ -212,11 +353,13 @@ txn_limbo_replica_term(const struct txn_limbo *limbo, uint32_t replica_id)
  * data from it. The check is only valid when elections are enabled.
  */
 static inline bool
-txn_limbo_is_replica_outdated(const struct txn_limbo *limbo,
-			      uint32_t replica_id)
+txn_limbo_is_replica_outdated(struct txn_limbo *limbo, uint32_t replica_id)
 {
-	return txn_limbo_replica_term(limbo, replica_id) <
-	       limbo->promote_greatest_term;
+	txn_limbo_lock(limbo);
+	uint64_t term = txn_limbo_replica_term_locked(limbo, replica_id);
+	bool v = term < limbo->promote_greatest_term;
+	txn_limbo_unlock(limbo);
+	return v;
 }
 
 /**
@@ -305,8 +448,7 @@ txn_limbo_wait_empty(struct txn_limbo *limbo, double timeout);
  * Persist limbo state to a given synchro request.
  */
 void
-txn_limbo_checkpoint(const struct txn_limbo *limbo,
-		     struct synchro_request *req);
+txn_limbo_checkpoint(struct txn_limbo *limbo, struct synchro_request *req);
 
 /**
  * Write a PROMOTE request, which has the same effect as CONFIRM(@a lsn) and

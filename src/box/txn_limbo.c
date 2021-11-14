@@ -43,6 +43,7 @@ txn_limbo_create(struct txn_limbo *limbo)
 	rlist_create(&limbo->queue);
 	limbo->len = 0;
 	limbo->owner_id = REPLICA_ID_NIL;
+	latch_create(&limbo->latch);
 	fiber_cond_create(&limbo->wait_cond);
 	vclock_create(&limbo->vclock);
 	vclock_create(&limbo->promote_term_map);
@@ -55,18 +56,27 @@ txn_limbo_create(struct txn_limbo *limbo)
 bool
 txn_limbo_is_ro(struct txn_limbo *limbo)
 {
-	return limbo->owner_id != REPLICA_ID_NIL &&
+	txn_limbo_lock(limbo);
+	bool res = limbo->owner_id != REPLICA_ID_NIL &&
 	       limbo->owner_id != instance_id;
+	txn_limbo_unlock(limbo);
+	return res;
 }
 
 struct txn_limbo_entry *
 txn_limbo_last_synchro_entry(struct txn_limbo *limbo)
 {
 	struct txn_limbo_entry *entry;
+
+	txn_limbo_lock(limbo);
 	rlist_foreach_entry_reverse(entry, &limbo->queue, in_queue) {
-		if (txn_has_flag(entry->txn, TXN_WAIT_ACK))
+		if (txn_has_flag(entry->txn, TXN_WAIT_ACK)) {
+			txn_limbo_unlock(limbo);
 			return entry;
+		}
 	}
+	txn_limbo_unlock(limbo);
+
 	return NULL;
 }
 
@@ -318,13 +328,14 @@ complete:
 }
 
 void
-txn_limbo_checkpoint(const struct txn_limbo *limbo,
-		     struct synchro_request *req)
+txn_limbo_checkpoint(struct txn_limbo *limbo, struct synchro_request *req)
 {
+	txn_limbo_lock_ex(limbo);
 	req->type = IPROTO_RAFT_PROMOTE;
 	req->replica_id = limbo->owner_id;
 	req->lsn = limbo->confirmed_lsn;
 	req->term = limbo->promote_greatest_term;
+	txn_limbo_unlock_ex(limbo);
 }
 
 static void
@@ -537,6 +548,7 @@ txn_limbo_read_promote(struct txn_limbo *limbo, uint32_t replica_id,
 void
 txn_limbo_write_demote(struct txn_limbo *limbo, int64_t lsn, uint64_t term)
 {
+	txn_limbo_lock_ex(limbo);
 	limbo->confirmed_lsn = lsn;
 	limbo->is_in_rollback = true;
 	struct txn_limbo_entry *e = txn_limbo_last_synchro_entry(limbo);
@@ -544,6 +556,7 @@ txn_limbo_write_demote(struct txn_limbo *limbo, int64_t lsn, uint64_t term)
 	(void)e;
 	txn_limbo_write_synchro(limbo, IPROTO_RAFT_DEMOTE, lsn, term);
 	limbo->is_in_rollback = false;
+	txn_limbo_unlock_ex(limbo);
 }
 
 /**
@@ -560,8 +573,9 @@ txn_limbo_read_demote(struct txn_limbo *limbo, int64_t lsn)
 void
 txn_limbo_ack(struct txn_limbo *limbo, uint32_t replica_id, int64_t lsn)
 {
+	txn_limbo_lock(limbo);
 	if (rlist_empty(&limbo->queue))
-		return;
+		goto out;
 	/*
 	 * If limbo is currently writing a rollback, it means that the whole
 	 * queue will be rolled back. Because rollback is written only for
@@ -573,7 +587,7 @@ txn_limbo_ack(struct txn_limbo *limbo, uint32_t replica_id, int64_t lsn)
 	 * decisions for the same LSNs.
 	 */
 	if (limbo->is_in_rollback)
-		return;
+		goto out;
 	assert(limbo->owner_id != REPLICA_ID_NIL);
 	int64_t prev_lsn = vclock_get(&limbo->vclock, replica_id);
 	/*
@@ -584,7 +598,7 @@ txn_limbo_ack(struct txn_limbo *limbo, uint32_t replica_id, int64_t lsn)
 	 * replica very soon.
 	 */
 	if (lsn == prev_lsn)
-		return;
+		goto out;
 	vclock_follow(&limbo->vclock, replica_id, lsn);
 	struct txn_limbo_entry *e;
 	int64_t confirm_lsn = -1;
@@ -609,9 +623,11 @@ txn_limbo_ack(struct txn_limbo *limbo, uint32_t replica_id, int64_t lsn)
 		}
 	}
 	if (confirm_lsn == -1 || confirm_lsn <= limbo->confirmed_lsn)
-		return;
+		goto out;
 	txn_limbo_write_confirm(limbo, confirm_lsn);
 	txn_limbo_read_confirm(limbo, confirm_lsn);
+out:
+	txn_limbo_unlock(limbo);
 }
 
 /**
@@ -720,8 +736,11 @@ txn_limbo_wait_confirm(struct txn_limbo *limbo)
 int
 txn_limbo_wait_empty(struct txn_limbo *limbo, double timeout)
 {
-	if (txn_limbo_is_empty(limbo))
+	txn_limbo_lock(limbo);
+	if (txn_limbo_is_empty(limbo)) {
+		txn_limbo_unlock(limbo);
 		return 0;
+	}
 	bool is_rollback;
 	double deadline = fiber_clock() + timeout;
 	/*
@@ -732,10 +751,12 @@ txn_limbo_wait_empty(struct txn_limbo *limbo, double timeout)
 		if (txn_limbo_wait_last_txn(limbo, &is_rollback,
 					    timeout) != 0) {
 			diag_set(ClientError, ER_TIMEOUT);
+			txn_limbo_unlock(limbo);
 			return -1;
 		}
 		timeout = deadline - fiber_clock();
 	} while (!txn_limbo_is_empty(limbo));
+	txn_limbo_unlock(limbo);
 	return 0;
 }
 
@@ -744,6 +765,8 @@ txn_limbo_process(struct txn_limbo *limbo, const struct synchro_request *req)
 {
 	uint64_t term = req->term;
 	uint32_t origin = req->origin_id;
+
+	txn_limbo_lock(limbo);
 	if (txn_limbo_replica_term(limbo, origin) < term) {
 		vclock_follow(&limbo->promote_term_map, origin, term);
 		if (term > limbo->promote_greatest_term)
@@ -756,6 +779,7 @@ txn_limbo_process(struct txn_limbo *limbo, const struct synchro_request *req)
 			 "before (%llu) is bigger.",
 			 iproto_type_name(req->type), origin, (long long)term,
 			 (long long)limbo->promote_greatest_term);
+		txn_limbo_unlock(limbo);
 		return;
 	}
 
@@ -773,8 +797,10 @@ txn_limbo_process(struct txn_limbo *limbo, const struct synchro_request *req)
 		 * data from an old leader, who has just started and written
 		 * confirm right on synchronous transaction recovery.
 		 */
-		if (!iproto_type_is_promote_request(req->type))
+		if (!iproto_type_is_promote_request(req->type)) {
+			txn_limbo_unlock(limbo);
 			return;
+		}
 		/*
 		 * Promote has a bigger term, and tries to steal the limbo. It
 		 * means it probably was elected with a quorum, and it makes no
@@ -799,7 +825,7 @@ txn_limbo_process(struct txn_limbo *limbo, const struct synchro_request *req)
 	default:
 		unreachable();
 	}
-	return;
+	txn_limbo_unlock(limbo);
 }
 
 void
