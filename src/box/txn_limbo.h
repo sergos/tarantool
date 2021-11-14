@@ -31,6 +31,7 @@
  */
 #include "small/rlist.h"
 #include "vclock/vclock.h"
+#include "tt_pthread.h"
 #include "latch.h"
 
 #include <stdint.h>

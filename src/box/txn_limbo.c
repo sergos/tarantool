@@ -576,7 +576,7 @@ txn_limbo_read_demote(struct txn_limbo *limbo, int64_t lsn)
 void
 txn_limbo_ack(struct txn_limbo *limbo, uint32_t replica_id, int64_t lsn)
 {
-	txn_limbo_lock(limbo);
+	txn_limbo_lock_ex(limbo);
 	if (rlist_empty(&limbo->queue))
 		goto out;
 	/*
@@ -630,7 +630,7 @@ txn_limbo_ack(struct txn_limbo *limbo, uint32_t replica_id, int64_t lsn)
 	txn_limbo_write_confirm(limbo, confirm_lsn);
 	txn_limbo_read_confirm(limbo, confirm_lsn);
 out:
-	txn_limbo_unlock(limbo);
+	txn_limbo_unlock_ex(limbo);
 }
 
 /**
