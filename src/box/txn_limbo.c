@@ -764,7 +764,7 @@ txn_limbo_process(struct txn_limbo *limbo, const struct synchro_request *req)
 	uint64_t term = req->term;
 	uint32_t origin = req->origin_id;
 
-	txn_limbo_lock(limbo);
+	txn_limbo_lock_ex(limbo);
 	if (txn_limbo_replica_term(limbo, origin) < term) {
 		vclock_follow(&limbo->promote_term_map, origin, term);
 		if (term > limbo->promote_greatest_term)
@@ -777,7 +777,7 @@ txn_limbo_process(struct txn_limbo *limbo, const struct synchro_request *req)
 			 "before (%llu) is bigger.",
 			 iproto_type_name(req->type), origin, (long long)term,
 			 (long long)limbo->promote_greatest_term);
-		txn_limbo_unlock(limbo);
+		txn_limbo_unlock_ex(limbo);
 		return;
 	}
 
@@ -796,7 +796,7 @@ txn_limbo_process(struct txn_limbo *limbo, const struct synchro_request *req)
 		 * confirm right on synchronous transaction recovery.
 		 */
 		if (!iproto_type_is_promote_request(req->type)) {
-			txn_limbo_unlock(limbo);
+			txn_limbo_unlock_ex(limbo);
 			return;
 		}
 		/*
@@ -823,7 +823,7 @@ txn_limbo_process(struct txn_limbo *limbo, const struct synchro_request *req)
 	default:
 		unreachable();
 	}
-	txn_limbo_unlock(limbo);
+	txn_limbo_unlock_ex(limbo);
 }
 
 void
