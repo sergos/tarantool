@@ -538,6 +538,7 @@ txn_limbo_read_promote(struct txn_limbo *limbo, uint32_t replica_id,
 		       int64_t lsn)
 {
 	assert(txn_limbo_is_locked(limbo));
+
 	txn_limbo_read_confirm(limbo, lsn);
 	txn_limbo_read_rollback(limbo, lsn + 1);
 	assert(txn_limbo_is_empty(&txn_limbo));
