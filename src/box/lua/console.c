@@ -70,6 +70,16 @@ lua_rl_complete(lua_State *L, const char *text, int start, int end);
  */
 static struct lua_State *readline_L;
 
+/*
+ * SIGINT callback function pointer. That is needed to
+ * replace the default sigint callback from main.cc.
+ * If tarantool is running in console mode it takes
+ * a value of pointer to function console_sigint_handler,
+ * when lbox_console_readline is called in repl.
+ * It is NULL by default.
+ */
+static sigint_cb_t sigint_cb = NULL;
+
 /**
  * Encode Lua object into Lua form.
  */
@@ -226,6 +236,24 @@ console_push_line(char *line)
 	free(line);
 }
 
+static bool sigint_fired = false;
+static struct fiber *interactive_fb;
+
+static void
+console_sigint_handler(ev_loop *loop, struct ev_signal *w, int revents)
+{
+	(void) loop;
+	(void) w;
+	(void) revents;
+
+	sigint_fired = true;
+	fiber_wakeup(interactive_fb);
+}
+
+sigint_cb_t get_cb() {
+	return sigint_cb;
+}
+
 /* implements readline() Lua API */
 static int
 lbox_console_readline(struct lua_State *L)
@@ -233,6 +261,8 @@ lbox_console_readline(struct lua_State *L)
 	const char *prompt = NULL;
 	int top;
 	int completion = 0;
+	interactive_fb = fiber();
+	sigint_cb = (sigint_cb_t)console_sigint_handler;
 
 	if (lua_gettop(L) > 0) {
 		switch (lua_type(L, 1)) {
@@ -281,9 +311,24 @@ lbox_console_readline(struct lua_State *L)
 	 */
 	rl_callback_handler_install(prompt, console_push_line);
 	top = lua_gettop(L);
+
 	while (top == lua_gettop(L)) {
 		while (coio_wait(STDIN_FILENO, COIO_READ,
 				 TIMEOUT_INFINITY) == 0) {
+			if (sigint_fired) {
+				const char *line_end = "^C";
+				ssize_t rc = write(STDOUT_FILENO, line_end, strlen(line_end));
+				(void) rc;
+				/* Discard current input and disable search mode */
+				RL_UNSETSTATE(RL_STATE_ISEARCH | RL_STATE_NSEARCH | RL_STATE_SEARCH);
+				rl_on_new_line();
+				rl_replace_line("", 0);
+				lua_pushstring(L, "");
+
+				readline_L = NULL;
+				sigint_cb = NULL;
+				return 1;
+			}
 			/*
 			 * Make sure the user of interactive
 			 * console has not hanged us, otherwise
@@ -294,12 +339,13 @@ lbox_console_readline(struct lua_State *L)
 		}
 		rl_callback_read_char();
 	}
-
 	readline_L = NULL;
 	/* Incidents happen. */
 #pragma GCC poison readline_L
 	rl_attempted_completion_function = NULL;
 	luaL_testcancel(L);
+	sigint_cb = NULL;
+
 	return 1;
 }
 
@@ -406,6 +452,11 @@ static int
 lbox_console_format_yaml(struct lua_State *L)
 {
 	int arg_count = lua_gettop(L);
+	if (sigint_fired && arg_count == 0) {
+		lua_pushstring(L, "");
+		sigint_fired = false;
+		return 1;
+	}
 	if (arg_count == 0) {
 		lua_pushstring(L, "---\n...\n");
 		return 1;
