@@ -36,7 +36,7 @@ jobs:
           cmake . -DENABLE_DIST=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo && make -j 4
 #          make install
         shell: bash
-      - name: some stupod step
+      - name: some stupid step
         run: cd sysbench && pwd && ls -la
         shell: bash
       - name: configure perf benchmark
@@ -53,6 +53,7 @@ jobs:
         with:
           path: bench-run
           repository: tarantool/bench-run
+          ref: VitaliyaIoffe/fix-publish
       - name: run
         run: ./run.sh
         working-directory: ${{ github.workspace }}/bench-run/benchs/sysbench
