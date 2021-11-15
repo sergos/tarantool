@@ -190,7 +190,7 @@ void
 txn_limbo_assign_remote_lsn(struct txn_limbo *limbo,
 			    struct txn_limbo_entry *entry, int64_t lsn)
 {
-	txn_limbo_lock_ex(limbo);
+	txn_limbo_lock(limbo);
 	assert(limbo->owner_id != REPLICA_ID_NIL);
 	assert(limbo->owner_id != instance_id);
 	assert(entry->lsn == -1);
@@ -198,14 +198,14 @@ txn_limbo_assign_remote_lsn(struct txn_limbo *limbo,
 	assert(txn_has_flag(entry->txn, TXN_WAIT_ACK));
 	(void) limbo;
 	entry->lsn = lsn;
-	txn_limbo_unlock_ex(limbo);
+	txn_limbo_unlock(limbo);
 }
 
 void
 txn_limbo_assign_local_lsn(struct txn_limbo *limbo,
 			   struct txn_limbo_entry *entry, int64_t lsn)
 {
-	txn_limbo_lock_ex(limbo);
+	txn_limbo_lock(limbo);
 	assert(limbo->owner_id != REPLICA_ID_NIL);
 	assert(limbo->owner_id == instance_id);
 	assert(entry->lsn == -1);
@@ -226,17 +226,19 @@ txn_limbo_assign_local_lsn(struct txn_limbo *limbo,
 		ack_count += vc.lsn >= lsn;
 	assert(ack_count >= entry->ack_count);
 	entry->ack_count = ack_count;
-	txn_limbo_unlock_ex(limbo);
+	txn_limbo_unlock(limbo);
 }
 
 void
 txn_limbo_assign_lsn(struct txn_limbo *limbo, struct txn_limbo_entry *entry,
 		     int64_t lsn)
 {
+	txn_limbo_lock_ex(limbo);
 	if (limbo->owner_id == instance_id)
 		txn_limbo_assign_local_lsn(limbo, entry, lsn);
 	else
 		txn_limbo_assign_remote_lsn(limbo, entry, lsn);
+	txn_limbo_unlock_ex(limbo);
 }
 
 static void
