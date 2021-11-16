@@ -176,6 +176,7 @@ txn_limbo_pop(struct txn_limbo *limbo, struct txn_limbo_entry *entry)
 void
 txn_limbo_abort(struct txn_limbo *limbo, struct txn_limbo_entry *entry)
 {
+	txn_limbo_lock(limbo);
 	entry->is_rollback = true;
 	/*
 	 * The simple rule about rollback/commit order applies
@@ -184,6 +185,7 @@ txn_limbo_abort(struct txn_limbo *limbo, struct txn_limbo_entry *entry)
 	 * is always the last.
 	 */
 	txn_limbo_pop(limbo, entry);
+	txn_limbo_unlock(limbo);
 }
 
 void
