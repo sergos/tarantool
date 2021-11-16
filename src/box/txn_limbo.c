@@ -164,6 +164,7 @@ txn_limbo_remove(struct txn_limbo *limbo, struct txn_limbo_entry *entry)
 static inline void
 txn_limbo_pop(struct txn_limbo *limbo, struct txn_limbo_entry *entry)
 {
+	assert(txn_limbo_is_locked(limbo));
 	assert(!rlist_empty(&entry->in_queue));
 	assert(txn_limbo_last_entry(limbo) == entry);
 	assert(entry->is_rollback);
