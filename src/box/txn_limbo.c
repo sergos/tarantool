@@ -494,6 +494,8 @@ txn_limbo_write_rollback(struct txn_limbo *limbo, int64_t lsn)
 static void
 txn_limbo_read_rollback(struct txn_limbo *limbo, int64_t lsn)
 {
+	assert(txn_limbo_is_locked(limbo));
+
 	assert(limbo->owner_id != REPLICA_ID_NIL || txn_limbo_is_empty(limbo));
 	assert(limbo == &txn_limbo);
 	struct txn_limbo_entry *e, *tmp;
@@ -838,8 +840,11 @@ txn_limbo_process(struct txn_limbo *limbo, const struct synchro_request *req)
 void
 txn_limbo_on_parameters_change(struct txn_limbo *limbo)
 {
-	if (rlist_empty(&limbo->queue))
+	//txn_limbo_lock(limbo);
+	if (rlist_empty(&limbo->queue)) {
+		//txn_limbo_unlock(limbo);
 		return;
+	}
 	struct txn_limbo_entry *e;
 	int64_t confirm_lsn = -1;
 	rlist_foreach_entry(e, &limbo->queue, in_queue) {
@@ -866,6 +871,7 @@ txn_limbo_on_parameters_change(struct txn_limbo *limbo)
 	 * sync transactions can live on replica infinitely.
 	 */
 	fiber_cond_broadcast(&limbo->wait_cond);
+	//txn_limbo_unlock(limbo);
 }
 
 void
