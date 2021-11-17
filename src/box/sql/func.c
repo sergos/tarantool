@@ -1956,7 +1956,7 @@ is_upcast(int op, enum field_type a, enum field_type b)
 static inline bool
 is_castable(int op, enum field_type a, enum field_type b)
 {
-	return is_upcast(op, a, b) || op == TK_VARIABLE ||
+	return is_upcast(op, a, b) || op == TK_VARIABLE || op == TK_GETITEM ||
 	       (sql_type_is_numeric(a) && sql_type_is_numeric(b)) ||
 	       b == FIELD_TYPE_ANY;
 }

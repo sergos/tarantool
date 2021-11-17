@@ -3455,7 +3455,7 @@ expr_code_map(struct Parse *parser, struct Expr *expr, int reg)
 		enum field_type type = sql_expr_type(expr);
 		if (expr->op != TK_VARIABLE && type != FIELD_TYPE_INTEGER &&
 		    type != FIELD_TYPE_UNSIGNED && type != FIELD_TYPE_STRING &&
-		    type != FIELD_TYPE_UUID) {
+		    type != FIELD_TYPE_UUID && expr->op != TK_GETITEM) {
 			diag_set(ClientError, ER_SQL_PARSER_GENERIC, "Only "
 				 "integer, string and uuid can be keys in map");
 			parser->is_aborted = true;
@@ -3466,6 +3466,41 @@ expr_code_map(struct Parse *parser, struct Expr *expr, int reg)
 	parser->nMem += count;
 	sqlExprCodeExprList(parser, list, values_reg, 0, SQL_ECEL_FACTOR);
 	sqlVdbeAddOp3(vdbe, OP_Map, count, reg, values_reg);
+}
+
+static void
+expr_code_getitem(struct Parse *parser, struct Expr *expr, int reg)
+{
+	struct Vdbe *vdbe = parser->pVdbe;
+	struct ExprList *list = expr->x.pList;
+	assert(list != NULL);
+	int count = list->nExpr;
+	struct Expr *value = list->a[count - 1].pExpr;
+
+	enum field_type type = value->op != TK_NULL ? sql_expr_type(value) :
+			       field_type_MAX;
+	if (value->op != TK_VARIABLE && value->op != TK_GETITEM &&
+	    type != FIELD_TYPE_MAP && type != FIELD_TYPE_ARRAY) {
+		diag_set(ClientError, ER_SQL_PARSER_GENERIC, "Selecting is "
+			 "only possible from map and array values");
+		parser->is_aborted = true;
+		return;
+	}
+	for (int i = 0; i < count - 1; ++i) {
+		struct Expr *arg = list->a[i].pExpr;
+		enum field_type type = arg->op != TK_NULL ? sql_expr_type(arg) :
+				       field_type_MAX;
+		if (type == FIELD_TYPE_MAP || type == FIELD_TYPE_ARRAY) {
+			diag_set(ClientError, ER_SQL_PARSER_GENERIC, "Map and "
+				 "array values cannot be keys");
+			parser->is_aborted = true;
+			return;
+		}
+	}
+	int reg_operands = parser->nMem + 1;
+	parser->nMem += count;
+	sqlExprCodeExprList(parser, list, reg_operands, 0, SQL_ECEL_FACTOR);
+	sqlVdbeAddOp3(vdbe, OP_Getitem, count, reg, reg_operands);
 }
 
 /*
@@ -3925,6 +3960,10 @@ sqlExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 
 	case TK_MAP:
 		expr_code_map(pParse, pExpr, target);
+		return target;
+
+	case TK_GETITEM:
+		expr_code_getitem(pParse, pExpr, target);
 		return target;
 
 	case TK_LT:

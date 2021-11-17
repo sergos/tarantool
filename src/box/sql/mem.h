@@ -136,6 +136,18 @@ mem_is_num(const struct Mem *mem)
 }
 
 static inline bool
+mem_is_any(const struct Mem *mem)
+{
+	return (mem->flags & MEM_Any) != 0;
+}
+
+static inline bool
+mem_is_msgpack(const struct Mem *mem)
+{
+	return (mem->type & (MEM_TYPE_MAP | MEM_TYPE_ARRAY)) != 0;
+}
+
+static inline bool
 mem_is_metatype(const struct Mem *mem)
 {
 	return (mem->flags & (MEM_Number | MEM_Scalar | MEM_Any)) != 0;
@@ -890,3 +902,8 @@ mem_encode_array(const struct Mem *mems, uint32_t count, uint32_t *size,
 char *
 mem_encode_map(const struct Mem *mems, uint32_t count, uint32_t *size,
 	       struct region *region);
+
+/** Return a value from ANY, MAP, or ARRAY MEM using the MEM array as keys. */
+int
+mem_getitem(const struct Mem *mem, const struct Mem *keys, int count,
+	    struct Mem *res);
