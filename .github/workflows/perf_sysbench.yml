@@ -61,5 +61,5 @@ jobs:
           name: perf_sysbench
           retention-days: 21
           path: |
-            *_result.txt
-            *_t_version.txt
+            ${{ github.workspace }}/bench-run/benchs/sysbench/*_result.txt
+            ${{ github.workspace }}/bench-run/benchs/sysbench/*_t_version.txt
