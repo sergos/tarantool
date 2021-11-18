@@ -750,8 +750,11 @@ txn_limbo_wait_confirm(struct txn_limbo *limbo)
 int
 txn_limbo_wait_empty(struct txn_limbo *limbo, double timeout)
 {
-	if (txn_limbo_is_empty(limbo))
+	txn_limbo_lock_ex(limbo);
+	if (txn_limbo_is_empty(limbo)) {
+		txn_limbo_unlock_ex(limbo);
 		return 0;
+	}
 	bool is_rollback;
 	double deadline = fiber_clock() + timeout;
 	/*
@@ -759,13 +762,16 @@ txn_limbo_wait_empty(struct txn_limbo *limbo, double timeout)
 	 * the last one.
 	 */
 	do {
+		txn_limbo_unlock_ex(limbo);
 		if (txn_limbo_wait_last_txn(limbo, &is_rollback,
 					    timeout) != 0) {
 			diag_set(ClientError, ER_TIMEOUT);
 			return -1;
 		}
 		timeout = deadline - fiber_clock();
+		txn_limbo_lock_ex(limbo);
 	} while (!txn_limbo_is_empty(limbo));
+	txn_limbo_unlock_ex(limbo);
 	return 0;
 }
 
