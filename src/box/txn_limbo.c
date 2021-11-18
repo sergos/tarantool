@@ -688,6 +688,7 @@ static int
 txn_limbo_wait_last_txn(struct txn_limbo *limbo, bool *is_rollback,
 			double timeout)
 {
+	txn_limbo_lock_ex(limbo);
 	assert(!txn_limbo_is_empty(limbo));
 
 	/* initialization of a waitpoint. */
@@ -712,7 +713,9 @@ txn_limbo_wait_last_txn(struct txn_limbo *limbo, bool *is_rollback,
 			break;
 		}
 		bool cancellable = fiber_set_cancellable(false);
+		txn_limbo_unlock_ex(limbo);
 		rc = fiber_cond_wait_timeout(&limbo->wait_cond, timeout);
+		txn_limbo_lock_ex(limbo);
 		fiber_set_cancellable(cancellable);
 		if (cwp.is_confirm || cwp.is_rollback) {
 			*is_rollback = cwp.is_rollback;
@@ -723,6 +726,7 @@ txn_limbo_wait_last_txn(struct txn_limbo *limbo, bool *is_rollback,
 			break;
 		timeout = deadline - fiber_clock();
 	}
+	txn_limbo_unlock_ex(limbo);
 	trigger_clear(&on_complete);
 	trigger_clear(&on_rollback);
 	return rc;
