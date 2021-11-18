@@ -34,10 +34,12 @@ jobs:
         run: |
           git submodule update --init --recursive
           cmake . -DENABLE_DIST=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo && make -j 4
-#          make install
         shell: bash
       - name: configure perf benchmark
-        run: ./autogen.sh
+        run: |
+          ./autogen.sh
+          ./configure --with-tarantool --without-mysql
+          make -j 4
         working-directory: ${{ github.workspace }}/sysbench
         shell: bash
       - name: configure perf benchmark
@@ -50,9 +52,9 @@ jobs:
         with:
           path: bench-run
           repository: tarantool/bench-run
-          ref: VitaliyaIoffe/fix-publish
-      - name: install dependencies
-        run: python3 -m pip install -r ./bench-run/requirements.txt
+          ref: VitaliyaIoffe/do-not-publish
+#      - name: install dependencies
+#        run: python3 -m pip install -r ./bench-run/requirements.txt
       - name: run benchmark
         run: ./run.sh
         working-directory: ${{ github.workspace }}/bench-run/benchs/sysbench
