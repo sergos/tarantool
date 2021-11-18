@@ -36,9 +36,6 @@ jobs:
           cmake . -DENABLE_DIST=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo && make -j 4
 #          make install
         shell: bash
-      - name: some stupid step
-        run: cd sysbench && pwd && ls -la
-        shell: bash
       - name: configure perf benchmark
         run: ./autogen.sh
         working-directory: ${{ github.workspace }}/sysbench
@@ -54,7 +51,9 @@ jobs:
           path: bench-run
           repository: tarantool/bench-run
           ref: VitaliyaIoffe/fix-publish
-      - name: run
+      - name: install dependencies
+        run: python3 -m pip install -r ./bench-run/requirements.txt
+      - name: run benchmark
         run: ./run.sh
         working-directory: ${{ github.workspace }}/bench-run/benchs/sysbench
       - name: call action to send Telegram message on failure
