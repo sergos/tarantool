@@ -91,6 +91,7 @@ txn_limbo_first_entry(struct txn_limbo *limbo)
 static inline struct txn_limbo_entry *
 txn_limbo_last_entry(struct txn_limbo *limbo)
 {
+	assert(txn_limbo_is_locked(limbo));
 	return rlist_last_entry(&limbo->queue,
 				struct txn_limbo_entry,
 				in_queue);
@@ -253,8 +254,12 @@ txn_limbo_wait_complete(struct txn_limbo *limbo, struct txn_limbo_entry *entry)
 	assert(entry->lsn > 0 || !txn_has_flag(entry->txn, TXN_WAIT_ACK));
 	bool cancellable = fiber_set_cancellable(false);
 
-	if (txn_limbo_entry_is_complete(entry))
+	txn_limbo_lock_ex(limbo);
+	if (txn_limbo_entry_is_complete(entry)) {
+		txn_limbo_unlock_ex(limbo);
 		goto complete;
+	}
+	txn_limbo_unlock_ex(limbo);
 
 	assert(!txn_has_flag(entry->txn, TXN_IS_DONE));
 	assert(txn_has_flag(entry->txn, TXN_WAIT_SYNC));
