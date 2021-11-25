@@ -143,7 +143,7 @@ test_run:cmd("clear filter")
 --
 test_run:cmd('create server cfg_tester6 with script = "box/lua/cfg_test5.lua"')
 test_run:cmd("start server cfg_tester6")
-test_run:grep_log('cfg_tester6', 'set \'vinyl_memory\' configuration option to 1073741824', 1000)
+test_run:grep_log('cfg_tester6', 'set \'vinyl_memory\' configuration option to 1073741824', 3000)
 test_run:cmd("stop server cfg_tester6")
 test_run:cmd("cleanup server cfg_tester6")
 
@@ -153,7 +153,7 @@ test_run:cmd("cleanup server cfg_tester6")
 test_run:cmd('create server cfg_tester7 with script = "box/lua/cfg_test6.lua"')
 test_run:cmd("start server cfg_tester7")
 -- test there is replication log in log
-test_run:grep_log('cfg_tester7', 'set \'replication\' configuration option to', 1000)
+test_run:grep_log('cfg_tester7', 'set \'replication\' configuration option to', 3000)
 -- test there is no password in log
 test_run:grep_log('cfg_tester7', 'test%-cluster%-cookie', 1000)
 test_run:cmd("stop server cfg_tester7")
@@ -166,7 +166,7 @@ test_run:cmd('create server cfg_tester8 with script = "box/lua/cfg_test8.lua", w
 test_run:cmd("start server cfg_tester8")
 --- Check that the warning is printed.
 version_warning = "Please, consider using box.schema.upgrade()."
-test_run:wait_log('cfg_tester8', version_warning, 1000, 1.0) ~= nil
+test_run:wait_log('cfg_tester8', version_warning, 3000, 1.0) ~= nil
 test_run:cmd("stop server cfg_tester8")
 test_run:cmd("cleanup server cfg_tester8")
 

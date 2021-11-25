@@ -84,6 +84,7 @@
 #include "watcher.h"
 #include "trivia/util.h"
 #include "version.h"
+#include "audit.h"
 
 static char status[64] = "unknown";
 
@@ -3179,6 +3180,7 @@ box_free(void)
 		engine_shutdown();
 		wal_free();
 		sql_built_in_functions_cache_free();
+		audit_free();
 	}
 }
 
@@ -3741,6 +3743,8 @@ box_cfg_xc(void)
 
 	/* Follow replica */
 	replicaset_follow();
+
+	audit_logger_init(cfg_gets("audit_log"), cfg_geti("audit_nonblock"));
 
 	fiber_gc();
 	is_box_configured = true;

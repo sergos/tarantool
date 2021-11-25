@@ -15,7 +15,9 @@ box.cfg.nosuchoption = 1
  | ...
 cfg_filter(box.cfg)
  | ---
- | - - - background
+ | - - - audit_nonblock
+ |     - true
+ |   - - background
  |     - false
  |   - - checkpoint_count
  |     - 2
@@ -142,7 +144,9 @@ box.cfg()
  | ...
 cfg_filter(box.cfg)
  | ---
- | - - - background
+ | - - - audit_nonblock
+ |     - true
+ |   - - background
  |     - false
  |   - - checkpoint_count
  |     - 2
@@ -638,7 +642,7 @@ test_run:cmd("start server cfg_tester6")
  | ---
  | - true
  | ...
-test_run:grep_log('cfg_tester6', 'set \'vinyl_memory\' configuration option to 1073741824', 1000)
+test_run:grep_log('cfg_tester6', 'set \'vinyl_memory\' configuration option to 1073741824', 3000)
  | ---
  | - set 'vinyl_memory' configuration option to 1073741824
  | ...
@@ -663,7 +667,7 @@ test_run:cmd("start server cfg_tester7")
  | - true
  | ...
 -- test there is replication log in log
-test_run:grep_log('cfg_tester7', 'set \'replication\' configuration option to', 1000)
+test_run:grep_log('cfg_tester7', 'set \'replication\' configuration option to', 3000)
  | ---
  | - set 'replication' configuration option to
  | ...
@@ -696,7 +700,7 @@ test_run:cmd("start server cfg_tester8")
 version_warning = "Please, consider using box.schema.upgrade()."
  | ---
  | ...
-test_run:wait_log('cfg_tester8', version_warning, 1000, 1.0) ~= nil
+test_run:wait_log('cfg_tester8', version_warning, 3000, 1.0) ~= nil
  | ---
  | - true
  | ...
