@@ -332,6 +332,8 @@ do {									\
 			       ____skip_lock);				\
 	if (!____skip_lock)						\
 		latch_unlock(&(limbo)->latch);				\
+	else								\
+		assert((limbo)->latch.owner == fiber());		\
 } while (0)
 
 static inline bool
