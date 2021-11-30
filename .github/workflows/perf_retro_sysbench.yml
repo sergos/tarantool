@@ -20,11 +20,16 @@ jobs:
       - name: Generate Matrix
         id: generate-matrix
         run: |
-          MATRIX_PARAMS_COMBINATIONS='
-              {"iterations": "1",},
-          '
+#          MATRIX_PARAMS_COMBINATIONS='
+#              {"iterations": "1",},
+#              {"iterations": "2",},
+#              {"iterations": "3",},
+#          '
+          do
+               iter="$iter              {\"iterations\": $i,},\n"
+          done
+          MATRIX_PARAMS_COMBINATIONS='\n'"$iter"'\n'
           echo ::set-output name=iterations::{\"include\":[$MATRIX_PARAMS_COMBINATIONS]}
-
 
   perf_sysbench:
     needs: generate_matrix
