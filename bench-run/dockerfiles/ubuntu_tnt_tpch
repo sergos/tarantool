@@ -1,0 +1,17 @@
+ARG image_from
+FROM ${image_from}
+
+COPY . /opt/tarantool
+WORKDIR /opt/tarantool
+
+# patching Tarantool sources for using with TPC-H
+RUN patch -p1 < /opt/tpch/patches/0001-sql-add-datetime-support-for-TPCH.patch \
+    || ( echo "ERROR: Patch not ready for Tarantool sources !" && exit 1)
+
+RUN git submodule update --recursive --init --force
+RUN ( cmake . -DENABLE_DIST=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo >build.log 2>&1 \
+    && make -j >>build.log 2>&1 && make install >>build.log 2>&1 ) || \
+    ( cat build.log && false )
+
+# benchmarks runners
+RUN git clone https://github.com/tarantool/bench-run.git /opt/bench-run

@@ -2,8 +2,6 @@ name: perf_retro_sysbench
 
 on:
   push:
-    tags:
-      - '*'
   repository_dispatch:
     types: [backend_automation]
   workflow_dispatch:
@@ -22,9 +20,10 @@ jobs:
       - name: Generate Matrix
         id: generate-matrix
         run: |
-#          TODO: provide array dynamically
-          ITERATIONS='${{ toJSON([1, 2, 3]) }}'
-          echo ::set-output name=iterations::${ITERATIONS}
+          MATRIX_PARAMS_COMBINATIONS='
+              {"iterations": "1",},
+          '
+          echo ::set-output name=iterations::{\"include\":[$MATRIX_PARAMS_COMBINATIONS]}
 
 
   perf_sysbench:
@@ -38,31 +37,32 @@ jobs:
     runs-on: perf-sh3
 
     strategy:
+      max-parallel: 1
       fail-fast: false
       matrix: ${{fromJson(needs.generate_matrix.outputs.iterations)}}
 
     steps:
 #      TODO: migrate to v2 when Git 2.18 or higher would be available
-
       - uses: actions/checkout@v1
         with:
           submodules: true
+          path: tarantool_for_retro
+      - uses: actions/checkout@v2.3.4
+        with:
+          path: tarantool
       - uses: actions/checkout@v2.3.4
         with:
           path: sysbench
           repository: tarantool/sysbench
-      - uses: actions/checkout@v2.3.4
-        with:
-          path: tarantool_for_retro
-          repository: tarantool/tarantool
       - name: tarantool build
         run: |
+          git submodule update --init --recursive
+          echo ${{ matrix.iterations }}
           git checkout HEAD~${{ matrix.iterations }}
           git submodule update --init --recursive
           cmake . -DENABLE_DIST=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo && make -j 4
           export BRANCH=${{ github.ref }}
           export COMMIT_TIMESTAMP="$(git log -1 --format=%ct)"
-        working-directory: ${{ github.workspace }}/tarantool_for_retro
       - name: configure perf benchmark
         run: |
           ./autogen.sh
@@ -71,7 +71,7 @@ jobs:
         working-directory: ${{ github.workspace }}/sysbench
       - name: run benchmark
         run: ./run.sh
-        working-directory: ${{ github.workspace }}/bench-run/benchs/sysbench
+        working-directory: tarantool_for_retro/bench-run/benchs/sysbench
       - name: call action to send Telegram message on failure
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_CORE_TOKEN }}

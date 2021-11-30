@@ -1,0 +1,61 @@
+name: perf_sysbench
+
+on:
+  push:
+    tags:
+      - '*'
+  repository_dispatch:
+    types: [backend_automation]
+  workflow_dispatch:
+
+jobs:
+  perf_sysbench:
+    if: github.event_name == 'push' ||
+        github.event_name == 'repository_dispatch' ||
+        github.event_name == 'workflow_dispatch' ||
+        github.event_name == 'schedule'
+
+    runs-on: ubuntu-latest
+    outputs:
+      iterations: ${{ steps.generate-matrix.outputs.iterations }}
+    steps:
+      - name: Generate Matrix
+        id: generate-matrix
+        run: |
+          SERVICES='${{ toJSON(github.event.client_payload.services) }}'
+          echo ::set-output name=services::${SERVICES}
+          VERSIONS='${{ toJSON(github.event.client_payload.versions) }}'
+          echo ::set-output name=versions::${VERSIONS}
+
+# TODO: set up publishing in same job
+  publish:
+    needs: perf_sysbench
+    # TODO: either fix post request availability from perf machines or
+    # decide which boxes could be used
+    runs-on: manual
+
+    steps:
+      - uses: actions/checkout@v2.3.4
+      - uses: actions/checkout@v2.3.4
+        with:
+          path: bench-run
+          repository: tarantool/bench-run
+#          TODO: change to default
+          ref: VitaliyaIoffe/do-not-publish
+      - name: Download all workflow run artifacts
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{ github.workspace }}/bench-run/benchs/publication
+      - name: install requirements
+        run: python3 -m pip install -r ${{ github.workspace }}/bench-run/requirements.txt
+      - name: publish
+        env:
+          INFLUXDB_TOKEN: ${{ secrets.INFLUXDB_TOKEN }}
+        run: ./publish.py -f ./perf_sysbench
+        working-directory: ${{ github.workspace }}/bench-run/benchs/publication
+      - name: call action to send Telegram message on failure
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_CORE_TOKEN }}
+          TELEGRAM_TO: ${{ secrets.TELEGRAM_CORE_TO }}
+        uses: ./.github/actions/send-telegram-notify
+        if: failure()
