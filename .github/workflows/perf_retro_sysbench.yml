@@ -21,7 +21,7 @@ jobs:
         id: generate-matrix
         run: |
           JSON_FMT='%s    {"iterations":"%s",},\n'
-          for i in {3..5}
+          for i in {3..3}
           do
                JSON_STRING=$(printf "$JSON_FMT" "$JSON_STRING" "$i")
           done
@@ -63,8 +63,9 @@ jobs:
           git checkout HEAD~${{ matrix.iterations }}
           git submodule update --init --recursive
           cmake . -DENABLE_DIST=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo && make -j 4
-#          echo "BRANCH=${{ github.ref }}" >> $GITHUB_ENV
-#          echo "COMMIT_TIMESTAMP=$(git log -1 --format=%ct)" >> $GITHUB_ENV
+          echo $(git log -1 --format=%ct)
+          COMMIT_TIMESTAMP=$(git log -1 --format=%ct)
+          echo "$COMMIT_TIMESTAMP" > COMMIT_TIMESTAMP_${{ matrix.iterations }}
       - name: configure perf benchmark
         run: |
           ./autogen.sh
@@ -84,13 +85,48 @@ jobs:
         uses: actions/upload-artifact@v2
         if: always()
         with:
-          name: perf_sysbench
+          name: perf_sysbench_${{ matrix.iterations }}
           retention-days: 21
           path: |
             tarantool/bench-run/benchs/sysbench/*_result.txt
             tarantool/bench-run/benchs/sysbench/*_t_version.txt
-      - name: publish
-        uses: VitaliyaIoffe/tarantool/.github/workflows/publish.yml@master
+            tarantool/COMMIT_TIMESTAMP_${{ matrix.iterations }}
+
+  publish:
+    needs: [generate_matrix, perf_sysbench]
+    # TODO: either fix post request availability from perf machines or
+    # decide which boxes could be used
+    runs-on: manual
+
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix: ${{fromJson(needs.generate_matrix.outputs.iterations)}}
+
+    steps:
+      - uses: actions/checkout@v2.3.4
+      - name: Download all workflow run artifacts
+        uses: actions/download-artifact@v2
         with:
-          COMMIT_TIMESTAMP: ${{ github.ref }}
-          BRANCH: $(git log -1 --format=%ct)
+          path: ${{ github.workspace }}/bench-run/benchs/publication
+      - name: install requirements
+        run: python3 -m pip install -r ${{ github.workspace }}/bench-run/requirements.txt
+      - name: timestamp
+        run: |
+          tmp=$(cat COMMIT_TIMESTAMP_${{ matrix.iterations }})
+          echo "timestamp=$tmp" >> $GITHUB_ENV
+          echo "$tmp"
+        working-directory: ${{ github.workspace }}/bench-run/benchs/publication/perf_sysbench_${{ matrix.iterations }}
+      - name: publish
+        env:
+          INFLUXDB_TOKEN: ${{ secrets.INFLUXDB_TOKEN }}
+          BRANCH: ${{ github.ref }}
+          COMMIT_TIMESTAMP: ${{ env.timestamp }}
+        run: ./publish.py -f ./perf_sysbench_${{ matrix.iterations }}
+        working-directory: ${{ github.workspace }}/bench-run/benchs/publication
+      - name: call action to send Telegram message on failure
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_CORE_TOKEN }}
+          TELEGRAM_TO: ${{ secrets.TELEGRAM_CORE_TO }}
+        uses: ./.github/actions/send-telegram-notify
+        if: failure()
