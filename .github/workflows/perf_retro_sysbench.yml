@@ -20,16 +20,13 @@ jobs:
       - name: Generate Matrix
         id: generate-matrix
         run: |
-#          MATRIX_PARAMS_COMBINATIONS='
-#              {"iterations": "1",},
-#              {"iterations": "2",},
-#              {"iterations": "3",},
-#          '
+          JSON_FMT='%s    {"iterations":"%s",},\n'
+          for i in {3..5}
           do
-               iter="$iter              {\"iterations\": $i,},\n"
+               JSON_STRING=$(printf "$JSON_FMT" "$JSON_STRING" "$i")
           done
-          MATRIX_PARAMS_COMBINATIONS='\n'"$iter"'\n'
-          echo ::set-output name=iterations::{\"include\":[$MATRIX_PARAMS_COMBINATIONS]}
+          echo $JSON_STRING | sed 's/},/},\n/g'
+          echo "::set-output name=iterations::{\"include\":[$JSON_STRING]}"
 
   perf_sysbench:
     needs: generate_matrix
