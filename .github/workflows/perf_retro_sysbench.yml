@@ -1,0 +1,123 @@
+name: perf_retro_sysbench
+
+on:
+  push:
+    tags:
+      - '*'
+  repository_dispatch:
+    types: [backend_automation]
+  workflow_dispatch:
+
+jobs:
+  generate_matrix:
+    if: github.event_name == 'push' ||
+      github.event_name == 'repository_dispatch' ||
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule'
+
+    runs-on: ubuntu-latest
+    outputs:
+      iterations: ${{ steps.generate-matrix.outputs.iterations }}
+    steps:
+      - name: Generate Matrix
+        id: generate-matrix
+        run: |
+#          TODO: provide array dynamically
+          ITERATIONS='${{ toJSON([1, 2, 3]) }}'
+          echo ::set-output name=iterations::${ITERATIONS}
+
+
+  perf_sysbench:
+    needs: generate_matrix
+
+    if: github.event_name == 'push' ||
+        github.event_name == 'repository_dispatch' ||
+        github.event_name == 'workflow_dispatch' ||
+        github.event_name == 'schedule'
+
+    runs-on: perf-sh3
+
+    strategy:
+      fail-fast: false
+      matrix: ${{fromJson(needs.generate_matrix.outputs.iterations)}}
+
+    steps:
+#      TODO: migrate to v2 when Git 2.18 or higher would be available
+
+      - uses: actions/checkout@v1
+        with:
+          submodules: true
+      - uses: actions/checkout@v2.3.4
+        with:
+          path: sysbench
+          repository: tarantool/sysbench
+      - uses: actions/checkout@v2.3.4
+        with:
+          path: tarantool_for_retro
+          repository: tarantool/tarantool
+      - name: tarantool build
+        run: |
+          git checkout HEAD~${{ matrix.iterations }}
+          git submodule update --init --recursive
+          cmake . -DENABLE_DIST=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo && make -j 4
+          export BRANCH=${{ github.ref }}
+          export COMMIT_TIMESTAMP="$(git log -1 --format=%ct)"
+        working-directory: ${{ github.workspace }}/tarantool_for_retro
+      - name: configure perf benchmark
+        run: |
+          ./autogen.sh
+          ./configure --with-tarantool --without-mysql
+          make -j 4
+        working-directory: ${{ github.workspace }}/sysbench
+      - name: run benchmark
+        run: ./run.sh
+        working-directory: ${{ github.workspace }}/bench-run/benchs/sysbench
+      - name: call action to send Telegram message on failure
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_CORE_TOKEN }}
+          TELEGRAM_TO: ${{ secrets.TELEGRAM_CORE_TO }}
+        uses: ./.github/actions/send-telegram-notify
+        if: failure()
+      - name: artifacts
+        uses: actions/upload-artifact@v2
+        if: always()
+        with:
+          name: perf_sysbench
+          retention-days: 21
+          path: |
+            ${{ github.workspace }}/bench-run/benchs/sysbench/*_result.txt
+            ${{ github.workspace }}/bench-run/benchs/sysbench/*_t_version.txt
+
+# TODO: set up publishing in same job
+  publish:
+    needs: perf_sysbench
+    # TODO: either fix post request availability from perf machines or
+    # decide which boxes could be used
+    runs-on: manual
+
+    steps:
+      - uses: actions/checkout@v2.3.4
+      - uses: actions/checkout@v2.3.4
+        with:
+          path: bench-run
+          repository: tarantool/bench-run
+#          TODO: change to default
+          ref: VitaliyaIoffe/do-not-publish
+      - name: Download all workflow run artifacts
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{ github.workspace }}/bench-run/benchs/publication
+
+      - name: install requirements
+        run: python3 -m pip install -r ${{ github.workspace }}/bench-run/requirements.txt
+      - name: publish
+        env:
+          INFLUXDB_TOKEN: ${{ secrets.INFLUXDB_TOKEN }}
+        run: ./publish.py -f ./perf_sysbench
+        working-directory: ${{ github.workspace }}/bench-run/benchs/publication
+      - name: call action to send Telegram message on failure
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_CORE_TOKEN }}
+          TELEGRAM_TO: ${{ secrets.TELEGRAM_CORE_TO }}
+        uses: ./.github/actions/send-telegram-notify
+        if: failure()
