@@ -90,7 +90,7 @@ jobs:
           path: |
             tarantool/bench-run/benchs/sysbench/*_result.txt
             tarantool/bench-run/benchs/sysbench/*_t_version.txt
-            tarantool/COMMIT_TIMESTAMP_${{ matrix.iterations }}
+            COMMIT_TIMESTAMP_${{ matrix.iterations }}
 
   publish:
     needs: [generate_matrix, perf_sysbench]
@@ -113,6 +113,8 @@ jobs:
         run: python3 -m pip install -r ${{ github.workspace }}/bench-run/requirements.txt
       - name: timestamp
         run: |
+          cp -r ./tarantool/bench-run/benchs/sysbench/* ${{ github.workspace }}/bench-run/benchs/publication/perf_sysbench_${{ matrix.iterations }}
+
           tmp=$(cat COMMIT_TIMESTAMP_${{ matrix.iterations }})
           echo "timestamp=$tmp" >> $GITHUB_ENV
           echo "$tmp"
