@@ -73,7 +73,7 @@ lua_source(lua_sources ${LUAJIT_SOURCE_ROOT}/tools/utils/bufread.lua)
 lua_source(lua_sources ${LUAJIT_SOURCE_ROOT}/tools/utils/symtab.lua)
 
 add_custom_target(generate_lua_sources
-    WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/src/box
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/box
     DEPENDS ${lua_sources})
 set_property(DIRECTORY PROPERTY ADDITIONAL_MAKE_CLEAN_FILES ${lua_sources})
 
@@ -148,41 +148,41 @@ set (server_sources
 )
 
 set(api_headers
-    ${PROJECT_BINARY_DIR}/src/trivia/config.h
-    ${PROJECT_SOURCE_DIR}/src/trivia/util.h
-    ${PROJECT_SOURCE_DIR}/src/on_shutdown.h
-    ${PROJECT_SOURCE_DIR}/src/lib/core/say.h
-    ${PROJECT_SOURCE_DIR}/src/lib/core/fiber.h
-    ${PROJECT_SOURCE_DIR}/src/lib/core/fiber_cond.h
-    ${PROJECT_SOURCE_DIR}/src/lib/core/coio.h
-    ${PROJECT_SOURCE_DIR}/src/lib/core/coio_task.h
-    ${PROJECT_SOURCE_DIR}/src/box/ibuf.h
-    ${PROJECT_SOURCE_DIR}/src/lua/utils.h
-    ${PROJECT_SOURCE_DIR}/src/lua/error.h
-    ${PROJECT_SOURCE_DIR}/src/lua/string.h
-    ${PROJECT_SOURCE_DIR}/src/box/txn.h
-    ${PROJECT_SOURCE_DIR}/src/box/tuple.h
-    ${PROJECT_SOURCE_DIR}/src/box/key_def.h
-    ${PROJECT_SOURCE_DIR}/src/box/lua/key_def.h
-    ${PROJECT_SOURCE_DIR}/src/box/field_def.h
-    ${PROJECT_SOURCE_DIR}/src/box/tuple_format.h
-    ${PROJECT_SOURCE_DIR}/src/box/tuple_extract_key.h
-    ${PROJECT_SOURCE_DIR}/src/box/schema_def.h
-    ${PROJECT_SOURCE_DIR}/src/box/box.h
-    ${PROJECT_SOURCE_DIR}/src/box/index.h
-    ${PROJECT_SOURCE_DIR}/src/box/iterator_type.h
-    ${PROJECT_SOURCE_DIR}/src/box/error.h
-    ${PROJECT_SOURCE_DIR}/src/box/lua/call.h
-    ${PROJECT_SOURCE_DIR}/src/box/lua/tuple.h
-    ${PROJECT_SOURCE_DIR}/src/lib/core/latch.h
-    ${PROJECT_SOURCE_DIR}/src/lib/core/clock.h
+    ${CMAKE_CURRENT_BINARY_DIR}/trivia/config.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/trivia/util.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/on_shutdown.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib/core/say.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib/core/fiber.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib/core/fiber_cond.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib/core/coio.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib/core/coio_task.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/box/ibuf.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/lua/utils.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/lua/error.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/lua/string.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/box/txn.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/box/tuple.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/box/key_def.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/box/lua/key_def.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/box/field_def.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/box/tuple_format.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/box/tuple_extract_key.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/box/schema_def.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/box/box.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/box/index.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/box/iterator_type.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/box/error.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/box/lua/call.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/box/lua/tuple.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib/core/latch.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib/core/clock.h
 )
 rebuild_module_api(${api_headers})
 
 if (NOT TARGET_OS_DEBIAN_FREEBSD)
     if (TARGET_OS_FREEBSD)
         set_source_files_properties(
-        ${PROJECT_SOURCE_DIR}/src/proc_title.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/proc_title.c
         PROPERTIES COMPILE_FLAGS "-DHAVE_SETPROCTITLE")
     endif()
 endif()
