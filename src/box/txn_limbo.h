@@ -71,12 +71,6 @@ struct txn_limbo_entry {
 	bool is_rollback;
 };
 
-static inline bool
-txn_limbo_entry_is_complete(const struct txn_limbo_entry *e)
-{
-	return e->is_commit || e->is_rollback;
-}
-
 /**
  * Limbo is a place where transactions are stored, which are
  * finished, but not committed nor rolled back. These are

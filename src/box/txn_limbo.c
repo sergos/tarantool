@@ -255,6 +255,14 @@ txn_limbo_assign_lsn(struct txn_limbo *limbo, struct txn_limbo_entry *entry,
 static void
 txn_limbo_write_rollback(struct txn_limbo *limbo, int64_t lsn);
 
+static bool
+txn_limbo_entry_is_complete(struct txn_limbo *limbo,
+			    const struct txn_limbo_entry *e)
+{
+	assert(txn_limbo_is_locked(limbo));
+	return e->is_commit || e->is_rollback;
+}
+
 // FIXME
 int
 txn_limbo_wait_complete(struct txn_limbo *limbo, struct txn_limbo_entry *entry)
@@ -263,7 +271,7 @@ txn_limbo_wait_complete(struct txn_limbo *limbo, struct txn_limbo_entry *entry)
 	bool cancellable = fiber_set_cancellable(false);
 
 	txn_limbo_lock_ex(limbo);
-	if (txn_limbo_entry_is_complete(entry))
+	if (txn_limbo_entry_is_complete(limbo, entry))
 		goto complete;
 
 	assert(!txn_has_flag(entry->txn, TXN_IS_DONE));
@@ -277,7 +285,7 @@ txn_limbo_wait_complete(struct txn_limbo *limbo, struct txn_limbo_entry *entry)
 		int rc = fiber_cond_wait_timeout(&limbo->wait_cond, timeout);
 		txn_limbo_lock_ex(limbo);
 
-		if (txn_limbo_entry_is_complete(entry))
+		if (txn_limbo_entry_is_complete(limbo, entry))
 			goto complete;
 		if (rc != 0)
 			break;
@@ -331,10 +339,10 @@ wait:
 		txn_limbo_unlock_ex(limbo);
 		fiber_yield();
 		txn_limbo_lock_ex(limbo);
-	} while (!txn_limbo_entry_is_complete(entry));
+	} while (!txn_limbo_entry_is_complete(limbo, entry));
 
 complete:
-	assert(txn_limbo_entry_is_complete(entry));
+	assert(txn_limbo_entry_is_complete(limbo, entry));
 	/*
 	 * Entry is *always* removed from the limbo by the same fiber, which
 	 * installed the commit/rollback flag.
