@@ -101,7 +101,6 @@ txn_limbo_last_entry(struct txn_limbo *limbo)
 struct txn_limbo_entry *
 txn_limbo_append(struct txn_limbo *limbo, uint32_t id, struct txn *txn)
 {
-	txn_limbo_lock_ex(limbo);
 	assert(txn_has_flag(txn, TXN_WAIT_SYNC));
 	assert(limbo == &txn_limbo);
 	/*
@@ -121,9 +120,9 @@ txn_limbo_append(struct txn_limbo *limbo, uint32_t id, struct txn *txn)
 		 * it should be done right now. See in the limbo comments why.
 		 */
 		diag_set(ClientError, ER_SYNC_ROLLBACK);
-		txn_limbo_unlock_ex(limbo);
 		return NULL;
 	}
+	txn_limbo_lock_ex(limbo);
 	if (id == 0)
 		id = instance_id;
 	if  (limbo->owner_id == REPLICA_ID_NIL) {
@@ -617,9 +616,8 @@ txn_limbo_read_demote(struct txn_limbo *limbo, int64_t lsn)
 void
 txn_limbo_ack(struct txn_limbo *limbo, uint32_t replica_id, int64_t lsn)
 {
-	txn_limbo_lock_ex(limbo);
 	if (rlist_empty(&limbo->queue))
-		goto out;
+		return;
 	/*
 	 * If limbo is currently writing a rollback, it means that the whole
 	 * queue will be rolled back. Because rollback is written only for
@@ -631,7 +629,8 @@ txn_limbo_ack(struct txn_limbo *limbo, uint32_t replica_id, int64_t lsn)
 	 * decisions for the same LSNs.
 	 */
 	if (limbo->is_in_rollback)
-		goto out;
+		return;
+	txn_limbo_lock_ex(limbo);
 	assert(limbo->owner_id != REPLICA_ID_NIL);
 	int64_t prev_lsn = vclock_get(&limbo->vclock, replica_id);
 	/*
