@@ -122,12 +122,10 @@ txn_limbo_append(struct txn_limbo *limbo, uint32_t id, struct txn *txn)
 		diag_set(ClientError, ER_SYNC_ROLLBACK);
 		return NULL;
 	}
-	txn_limbo_lock_ex(limbo);
 	if (id == 0)
 		id = instance_id;
 	if  (limbo->owner_id == REPLICA_ID_NIL) {
 		diag_set(ClientError, ER_SYNC_QUEUE_UNCLAIMED);
-		txn_limbo_unlock_ex(limbo);
 		return NULL;
 	} else if (limbo->owner_id != id) {
 		if (txn_limbo_is_empty(limbo)) {
@@ -137,7 +135,6 @@ txn_limbo_append(struct txn_limbo *limbo, uint32_t id, struct txn *txn)
 			diag_set(ClientError, ER_UNCOMMITTED_FOREIGN_SYNC_TXNS,
 				 limbo->owner_id);
 		}
-		txn_limbo_unlock_ex(limbo);
 		return NULL;
 	}
 	size_t size;
@@ -145,7 +142,6 @@ txn_limbo_append(struct txn_limbo *limbo, uint32_t id, struct txn *txn)
 							typeof(*e), &size);
 	if (e == NULL) {
 		diag_set(OutOfMemory, size, "region_alloc_object", "e");
-		txn_limbo_unlock_ex(limbo);
 		return NULL;
 	}
 	e->txn = txn;
@@ -155,7 +151,6 @@ txn_limbo_append(struct txn_limbo *limbo, uint32_t id, struct txn *txn)
 	e->is_rollback = false;
 	rlist_add_tail_entry(&limbo->queue, e, in_queue);
 	limbo->len++;
-	txn_limbo_unlock_ex(limbo);
 	return e;
 }
 
