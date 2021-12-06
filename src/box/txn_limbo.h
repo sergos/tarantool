@@ -333,9 +333,9 @@ do {									\
 static inline bool
 txn_limbo_is_empty(struct txn_limbo *limbo)
 {
-	txn_limbo_lock(limbo);
+	//txn_limbo_lock(limbo);
 	bool res = rlist_empty(&limbo->queue);
-	txn_limbo_unlock(limbo);
+	//txn_limbo_unlock(limbo);
 	return res;
 }
 
