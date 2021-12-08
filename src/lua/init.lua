@@ -29,6 +29,62 @@ local LUA_TEMPLATES = { '?.lua', '?/init.lua' }
 local ROCKS_LIB_TEMPLATES = { ROCKS_LIB_PATH .. '/?.'..soext }
 local ROCKS_LUA_TEMPLATES = { ROCKS_LUA_PATH .. '/?.lua', ROCKS_LUA_PATH .. '/?/init.lua' }
 
+old_require = require
+local function remove_root_directory(path)
+    local cur_dir = os.getenv("PWD") .. '/'
+   local start_len = #path
+
+    while #cur_dir > 0 and start_len == #path do
+        if cur_dir == '/' then
+            if path:sub(1, 1) == '/' then
+                path = path:sub(2)
+            end
+            break
+        end
+        path = path:gsub(cur_dir, '')
+        local ind= cur_dir:find('[^/]+/$')
+        cur_dir = cur_dir:sub(1,ind - 1)
+    end
+    return path
+end
+
+
+local function module_name_form_filename(filename)
+    local pathes = package.path .. package.cpath
+    local result = filename
+    result = result:gsub('builtin/', '')
+
+    for path in  pathes:gmatch'/([A-Za-z\\/\\.0-9]+)\\?' do
+        result = result:gsub('/' .. path, '');
+    end
+
+    result = result:gsub('/init.lua', '');
+    result = result:gsub('%.lua', '');
+
+    result = remove_root_directory(result)
+    result = result:gsub(ROCKS_LIB_PATH .. '/', '');
+    result = result:gsub(ROCKS_LUA_PATH .. '/', '');
+    result = result:gsub('/', '.');
+    return result
+end
+
+local function module_name_by_func(func_level)
+    local debug = debug or old_require('debug')
+    local src_name = debug.getinfo(func_level + 1).source
+    src_name = src_name:sub(2)
+    return module_name_form_filename(src_name)
+end
+
+require = function(modname)
+    if modname == 'log' then
+        local log = old_require(modname)
+        log.new(module_name_by_func(2))
+        return log
+    end
+    return old_require(modname)
+end
+
+
 local package_searchroot
 
 local function searchroot()
@@ -201,6 +257,8 @@ table.insert(package.loaders, 5, gen_loader_func(search_rocks_lib, load_lib))
 rawset(package, "search", search)
 rawset(package, "searchroot", searchroot)
 rawset(package, "setsearchroot", setsearchroot)
+
+
 
 return {
     uptime = uptime;

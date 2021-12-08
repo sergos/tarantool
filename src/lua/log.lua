@@ -1,8 +1,9 @@
 -- log.lua
 --
+local debug = require('debug')
 local ffi = require('ffi')
 ffi.cdef[[
-    typedef void (*sayfunc_t)(int level, const char *filename, int line,
+    typedef void (*sayfunc_t)(int level, const char *module_name, const char *filename, int line,
                const char *error, const char *format, ...);
 
     enum say_logger_type {
@@ -131,6 +132,7 @@ local log_cfg = {
     nonblock        = nil,
     level           = S_INFO,
     format          = fmt_num2str[ffi.C.SF_PLAIN],
+    module_name     = 'tarantool',
 }
 
 -- Name mapping from box to log module and
@@ -260,6 +262,17 @@ local function verify_level(key, level)
     return true
 end
 
+-- Test if module_name is a valid string.
+local function verify_module_name(key, module_name)
+    assert(log_cfg[key] ~= nil)
+
+    if type(module_name) ~= 'string' then
+        return false, "must be a string"
+    end
+
+    return true
+end
+
 local verify_ops = {
     ['log']         = verify_static,
     ['nonblock']    = verify_static,
@@ -306,15 +319,15 @@ local function say(level, fmt, ...)
         fmt = tostring(fmt)
     end
 
-    local debug = require('debug')
     local frame = debug.getinfo(3, "Sl")
+
     local line, file = 0, 'eval'
     if type(frame) == 'table' then
         line = frame.currentline or 0
         file = frame.short_src or frame.src or 'eval'
     end
 
-    ffi.C._say(level, file, line, nil, format, fmt)
+    ffi.C._say(level, log_cfg.module_name, file, line, nil, format, fmt)
 end
 
 -- Just a syntactic sugar over say routine.
@@ -388,6 +401,37 @@ local function log_format(name)
     end
 
     set_log_format(name, true)
+end
+
+-- Set new logging module name, the module name must be valid!
+local function set_module_name(module_name, update_box_cfg)
+    assert(type(module_name) == 'string')
+
+    -- ffi.C.say_set_module_name(module_name)
+
+    rawset(log_cfg, 'module_name', module_name)
+
+    --if update_box_cfg then
+    --    box_cfg_update('module_name')
+    --end
+
+    local m = "log: module_name set to %s"
+    say(S_DEBUG, m:format(module_name))
+end
+
+-- Tries to set a new module name, or print an error.
+local function log_module_name(module_name)
+    local ok, msg = verify_option('module_name', module_name)
+    if not ok then
+        error(msg)
+    end
+
+    set_module_name(module_name, true)
+end
+
+
+local function log_new(module_name)
+    log_module_name(module_name)
 end
 
 -- Returns pid of a pipe process.
@@ -469,6 +513,10 @@ local function reload_cfg(cfg)
     if cfg.format ~= nil then
         log_format(cfg.format)
     end
+
+    if cfg.module_name ~= nil then
+        log_module_name(cfg.module_name)
+    end
 end
 
 -- Load or reload configuration via log.cfg({}) call.
@@ -505,6 +553,14 @@ local function load_cfg(self, cfg)
         end
     end
 
+    if cfg.module_name ~= nil then
+        local ok, msg = verify_option('module_name', cfg.module_name)
+        if not ok then
+            local m = "log.cfg: \'%s\' %s"
+            error(m:format('module_name', msg))
+        end
+    end
+
     if cfg.nonblock ~= nil then
         if type(cfg.nonblock) ~= 'boolean' then
             error("log.cfg: 'nonblock' option must be 'true' or 'false'")
@@ -517,6 +573,7 @@ local function load_cfg(self, cfg)
 
     cfg.level = cfg.level or log_cfg.level
     cfg.format = cfg.format or log_cfg.format
+    cfg.module_name = cfg.module_name or log_cfg.module_name
     cfg.nonblock = cfg.nonblock or log_cfg.nonblock
 
     -- nonblock is special: it has to become integer
@@ -553,12 +610,13 @@ local function load_cfg(self, cfg)
     rawset(log_cfg, 'level', cfg.level)
     rawset(log_cfg, 'nonblock', nonblock)
     rawset(log_cfg, 'format', cfg.format)
+    rawset(log_cfg, 'module_name', cfg.module_name)
 
     -- and box.cfg output as well.
     box_cfg_update()
 
-    local m = "log.cfg({log=%s,level=%s,nonblock=%s,format=\'%s\'})"
-    say(S_DEBUG, m:format(cfg.log, cfg.level, cfg.nonblock, cfg.format))
+    local m = "log.cfg({log=%s,level=%s,nonblock=%s,format=\'%s\',module_name=%s})"
+    say(S_DEBUG, m:format(cfg.log, cfg.level, cfg.nonblock, cfg.format, cfg.module_name))
 end
 
 local compat_warning_said = false
@@ -579,6 +637,7 @@ local log = {
     debug = say_closure(S_DEBUG),
     error = say_closure(S_ERROR),
     rotate = log_rotate,
+    new = log_new,
     pid = log_pid,
     level = log_level,
     log_format = log_format,
