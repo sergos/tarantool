@@ -136,6 +136,9 @@ latch_lock_timeout(struct latch *l, ev_tstamp timeout)
 		if (l->owner == fiber()) {
 			/* Current fiber was woken by previous latch owner. */
 			break;
+		} else if (l->owner == NULL) {
+			l->owner = fiber();
+			break;
 		}
 		timeout -= ev_monotonic_now(loop()) - start;
 		if (timeout <= 0) {
