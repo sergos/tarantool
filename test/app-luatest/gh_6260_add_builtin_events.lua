@@ -2,6 +2,7 @@ local t = require('luatest')
 local net = require('net.box')
 local cluster = require('test.luatest_helpers.cluster')
 local helpers = require('test.luatest_helpers')
+local fiber = require('fiber')
 
 local g = t.group('gh_6260')
 
@@ -27,18 +28,21 @@ end)
 g.test_box_status_event= function(cg)
     local c = net.connect(cg.master.net_box_uri)
 
-    c:eval([[
-        i = ''
-        box.watch('box.status', function(...) i = {...} end)
-    ]])
+    local result = {}
+    local result_no = 0
+    local watcher = c:watch('box.status',
+                            function(name, state)
+                                assert(name == 'box.status')
+                                print(state)
+                                result = state
+                                result_no = result_no + 1
+                            end)
 
-    t.assert_equals(c:eval("return i"),
-        {"box.status",
-            {is_ro = cg.master:eval("return box.info.ro"),
-            is_ro_cfg = cg.master:eval("return box.cfg.read_only"),
-            status = cg.master:eval("return box.info.status")}})
+    -- initial state should arrive
+    while result_no < 1 do fiber.sleep(0.001) end
+    t.assert_equals(result, {is_ro = false, is_ro_cfg = false, status = 'running'})
 
-    -- next step
+    -- test orphan status appearance
     cg.master:eval(([[
         box.cfg{
             replication = {
@@ -46,41 +50,51 @@ g.test_box_status_event= function(cg)
                 "%s"
             },
             replication_connect_timeout = 0.001,
+            replication_timeout = 0.001,
         }
     ]]):format(helpers.instance_uri('master'),
                helpers.instance_uri('replica')))
+    -- here we have 2 notifications: entering ro when can't connect
+    -- to master and the second one when going orphan
+    while result_no < 3 do fiber.sleep(0.000001) end
+    t.assert_equals(result, {is_ro = true, is_ro_cfg = false, status = 'orphan'})
 
-    t.assert_equals(c:eval("return i"),
-        {"box.status",
-            {is_ro = cg.master:eval("return box.info.ro"),
-            is_ro_cfg = cg.master:eval("return box.cfg.read_only"),
-            status = cg.master:eval("return box.info.status")}})
-
-    -- next step
-    cg.master:eval(([[
+    -- test ro_cfg appearance
+    cg.master:eval([[
         box.cfg{
-            replication = {
-                "%s",
-            },
+            replication = {},
+            read_only = true,
         }
-    ]]):format(helpers.instance_uri('master')))
+    ]])
+    while result_no < 4 do fiber.sleep(0.000001) end
+    t.assert_equals(result, {is_ro = true, is_ro_cfg = true, status = 'running'})
 
-    t.assert_equals(c:eval("return i"),
-        {"box.status",
-            {is_ro = cg.master:eval("return box.info.ro"),
-            is_ro_cfg = cg.master:eval("return box.cfg.read_only"),
-            status = cg.master:eval("return box.info.status")}})
+    -- reset to rw
+    cg.master:eval([[
+        box.cfg{
+            read_only = false,
+        }
+    ]])
+    while result_no < 5 do fiber.sleep(0.000001) end
+    t.assert_equals(result, {is_ro = false, is_ro_cfg = false, status = 'running'})
 
-    -- next step
-    cg.master:eval("box.cfg{read_only = true}")
+    -- turning manual election mode puts into ro
+    cg.master:eval([[
+        box.cfg{
+            election_mode = 'manual',
+        }
+    ]])
+    while result_no < 6 do fiber.sleep(0.000001) end
+    t.assert_equals(result, {is_ro = true, is_ro_cfg = false, status = 'running'})
 
-    t.assert_equals(c:eval("return i"),
-        {"box.status",
-            {is_ro = cg.master:eval("return box.info.ro"),
-            is_ro_cfg = cg.master:eval("return box.cfg.read_only"),
-            status = cg.master:eval("return box.info.status")}})
+    -- promotion should turn rm
+    cg.master:eval([[
+        box.ctl.promote()
+    ]])
+    while result_no < 7 do fiber.sleep(0.000001) end
+    t.assert_equals(result, {is_ro = false, is_ro_cfg = false, status = 'running'})
 
-
+    watcher:unregister()
     c:close()
 end
 
@@ -96,7 +110,7 @@ g.before_test('test_box_election_event', function(cg)
                         helpers.instance_uri('instance_', 3);
         },
         replication_connect_quorum = 0,
-        election_mode = 'candidate',
+        election_mode = 'off',
         replication_synchro_quorum = 2,
         replication_synchro_timeout = 1,
         replication_timeout = 0.25,
@@ -125,105 +139,112 @@ g.after_test('test_box_election_event', function(cg)
 end)
 
 
-g.test_box_election_event= function(cg)
-    local c1 = net.connect(cg.instance_1.net_box_uri)
-    local c2 = net.connect(cg.instance_2.net_box_uri)
-    local c3 = net.connect(cg.instance_3.net_box_uri)
+g.test_box_election_event = function(cg)
+    local c = {}
+    c[1] = net.connect(cg.instance_1.net_box_uri)
+    c[2] = net.connect(cg.instance_2.net_box_uri)
+    c[3] = net.connect(cg.instance_3.net_box_uri)
 
-    c1:eval([[
-        i1 = ''
-        box.watch('box.election', function(...) i1 = {...} end)
-    ]])
-    c2:eval([[
-        i2 = ''
-        box.watch('box.election', function(...) i2 = {...} end)
-    ]])
-    c3:eval([[
-        i3 = ''
-        box.watch('box.election', function(...) i3 = {...} end)
-    ]])
+    local res = {}
+    local res_n = {0, 0, 0}
 
-    t.assert_equals(c1:eval("return i1"),
-        {"box.election",
-            {term = cg.instance_1:eval("return box.info.election.term"),
-            leader = cg.instance_1:eval("return box.info.election.leader"),
-            is_ro = cg.instance_1:eval("return box.info.ro"),
-            role = cg.instance_1:eval("return box.info.election.state")}})
+    for i = 1, 3 do
+        c[i]:watch('box.election',
+                   function(n, s)
+                       t.assert_equals(n, 'box.election')
+                       res[i] = s
+                       res_n[i] = res_n[i] + 1
+                   end)
+    end
+    while res_n[1] + res_n[2] + res_n[3] < 3 do fiber.sleep(0.00001) end
 
-    t.assert_equals(c2:eval("return i2"),
-        {"box.election",
-            {term = cg.instance_2:eval("return box.info.election.term"),
-            leader = cg.instance_2:eval("return box.info.election.leader"),
-            is_ro = cg.instance_2:eval("return box.info.ro"),
-            role = cg.instance_2:eval("return box.info.election.state")}})
+    -- verify all instances are in the same state
+    t.assert_equals(res[1], res[2])
+    t.assert_equals(res[1], res[3])
 
-    t.assert_equals(c3:eval("return i3"),
-        {"box.election",
-            {term = cg.instance_3:eval("return box.info.election.term"),
-            leader = cg.instance_3:eval("return box.info.election.leader"),
-            is_ro = cg.instance_3:eval("return box.info.ro"),
-            role = cg.instance_3:eval("return box.info.election.state")}})
+    -- wait for elections to complete, verify leader is the instance_1
+    -- trying to avoid the exact number of term - it can vary
+    local instance1_id = cg.instance_1:eval("return box.info.id")
 
-
-    -- next step
-    cg.instance_1:eval("return box.cfg{election_mode='voter'}")
+    cg.instance_1:eval("box.cfg{election_mode='candidate'}")
+    cg.instance_2:eval("box.cfg{election_mode='voter'}")
+    cg.instance_3:eval("box.cfg{election_mode='voter'}")
 
     cg.instance_1:wait_election_leader_found()
     cg.instance_2:wait_election_leader_found()
     cg.instance_3:wait_election_leader_found()
 
-    t.assert_equals(c1:eval("return i1"),
-        {"box.election",
-            {term = cg.instance_1:eval("return box.info.election.term"),
-            leader = cg.instance_1:eval("return box.info.election.leader"),
-            is_ro = cg.instance_1:eval("return box.info.ro"),
-            role = cg.instance_1:eval("return box.info.election.state")}})
+    t.assert_equals(res[1].leader, instance1_id)
+    t.assert_equals(res[1].is_ro, false)
+    t.assert_equals(res[1].role, 'leader')
+    t.assert_equals(res[2].leader, instance1_id)
+    t.assert_equals(res[2].is_ro, true)
+    t.assert_equals(res[2].role, 'follower')
+    t.assert_equals(res[3].leader, instance1_id)
+    t.assert_equals(res[3].is_ro, true)
+    t.assert_equals(res[3].role, 'follower')
+    t.assert_equals(res[1].term, res[2].term)
+    t.assert_equals(res[1].term, res[3].term)
 
-    t.assert_equals(c2:eval("return i2"),
-        {"box.election",
-            {term = cg.instance_2:eval("return box.info.election.term"),
-            leader = cg.instance_2:eval("return box.info.election.leader"),
-            is_ro = cg.instance_2:eval("return box.info.ro"),
-            role = cg.instance_2:eval("return box.info.election.state")}})
+    -- check the stepping down is working
+    res_n = {0, 0, 0}
+    cg.instance_1:eval("box.cfg{election_mode='voter'}")
+    while res_n[1] + res_n[2] + res_n[3] < 3 do fiber.sleep(0.00001) end
 
-    t.assert_equals(c3:eval("return i3"),
-        {"box.election",
-            {term = cg.instance_3:eval("return box.info.election.term"),
-            leader = cg.instance_3:eval("return box.info.election.leader"),
-            is_ro = cg.instance_3:eval("return box.info.ro"),
-            role = cg.instance_3:eval("return box.info.election.state")}})
+    local expected = {is_ro = true, role = 'follower', term = res[1].term, leader = 0}
+    t.assert_equals(res[1], expected)
+    t.assert_equals(res[2], expected)
+    t.assert_equals(res[3], expected)
+
+    c[1]:close()
+    c[2]:close()
+    c[3]:close()
+end
 
 
-    -- next step
-    cg.instance_1:eval("return box.cfg{election_mode='candidate'}")
-    cg.instance_2:eval("return box.cfg{election_mode='voter'}")
+g.before_test('test_box_schema', function(cg)
+    cg.cluster = cluster:new({})
+    cg.master = cg.cluster:build_server({alias = 'master'})
+    cg.cluster:add_server(cg.master)
+    cg.cluster:start()
+end)
 
-    cg.instance_1:wait_election_leader_found()
-    cg.instance_2:wait_election_leader_found()
-    cg.instance_3:wait_election_leader_found()
+g.after_test('test_box_schema', function(cg)
+    cg.cluster.servers = nil
+    cg.cluster:drop()
+end)
 
-    t.assert_equals(c1:eval("return i1"),
-        {"box.election",
-            {term = cg.instance_1:eval("return box.info.election.term"),
-            leader = cg.instance_1:eval("return box.info.election.leader"),
-            is_ro = cg.instance_1:eval("return box.info.ro"),
-            role = cg.instance_1:eval("return box.info.election.state")}})
+g.test_box_schema = function(cg)
 
-    t.assert_equals(c2:eval("return i2"),
-        {"box.election",
-            {term = cg.instance_2:eval("return box.info.election.term"),
-            leader = cg.instance_2:eval("return box.info.election.leader"),
-            is_ro = cg.instance_2:eval("return box.info.ro"),
-            role = cg.instance_2:eval("return box.info.election.state")}})
+    local c = net.connect(cg.master.net_box_uri)
+    local version = 0
+    local version_n = 0
+    print(c.schema_version)
 
-    t.assert_equals(c3:eval("return i3"),
-        {"box.election",
-            {term = cg.instance_3:eval("return box.info.election.term"),
-            leader = cg.instance_3:eval("return box.info.election.leader"),
-            is_ro = cg.instance_3:eval("return box.info.ro"),
-            role = cg.instance_3:eval("return box.info.election.state")}})
+    local watcher = c:watch('box.schema',
+                            function(n, s)
+                                assert(n == 'box.schema')
+                                print(s, s.version)
+                                version = s.version
+                                version_n = version_n + 1
+                            end)
 
-    c1:close()
-    c2:close()
-    c3:close()
+    cg.master:eval("box.schema.create_space('p')")
+    while version_n < 1 do fiber.sleep(0.001) end
+    -- first version change, use it as initial value
+    local init_version = version
+
+    version_n = 0
+    cg.master:eval("box.space.p:create_index('i')")
+    while version_n < 1 do fiber.sleep(0.001) end
+    t.assert_equals(version, init_version + 1)
+
+    version_n = 0
+    cg.master:eval("box.space.p:drop()")
+    while version_n < 1 do fiber.sleep(0.001) end
+    -- there'll be 2 changes - index and space
+    t.assert_equals(version, init_version + 3)
+
+    watcher:unregister()
+    c:close()
 end

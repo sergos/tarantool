@@ -180,7 +180,6 @@ box_update_ro_summary(void)
 	if (is_ro_summary)
 		engine_switch_to_ro();
 	fiber_cond_broadcast(&ro_cond);
-	/* Checking box.info.ro change */
 	box_broadcast_status();
 	box_broadcast_election();
 }
@@ -3944,6 +3943,29 @@ box_reset_stat(void)
 }
 
 void
+
+box_broadcast_id(void)
+{
+	char buf[1024];
+	char *w = buf;
+	struct replica *replica = replica_by_uuid(&INSTANCE_UUID);
+	uint32_t id = (replica == NULL) ? 0 : replica->id;
+
+	w = mp_encode_map(w, 3);
+	w = mp_encode_str0(w, "id");
+	w = mp_encode_uint(w, id);
+	w = mp_encode_str0(w, "instance_uuid");
+	w = mp_encode_uuid(w, &INSTANCE_UUID);
+	w = mp_encode_str0(w, "replicaset_uuid");
+	w = mp_encode_uuid(w, &REPLICASET_UUID);
+
+	box_broadcast("box.id", strlen("box.id"), buf, w);
+
+	assert((size_t)(w - buf) < 1024);
+}
+
+void
+
 box_broadcast_status(void)
 {
 	char buf[1024];
@@ -3985,6 +4007,21 @@ box_broadcast_election()
 	w = mp_encode_uint(w, raft->leader);
 
 	box_broadcast("box.election", strlen("box.election"), buf, w);
+
+	assert((size_t)(w - buf) < 1024);
+}
+
+void
+box_broadcast_schema(void)
+{
+	char buf[1024];
+	char *w = buf;
+
+	w = mp_encode_map(w, 1);
+	w = mp_encode_str0(w, "version");
+	w = mp_encode_uint(w, box_schema_version());
+
+	box_broadcast("box.schema", strlen("box.schema"), buf, w);
 
 	assert((size_t)(w - buf) < 1024);
 }
