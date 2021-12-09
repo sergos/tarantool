@@ -69,6 +69,11 @@ struct func {
 	 * Cached runtime access information.
 	 */
 	struct access access[BOX_USER_MAX];
+	/**
+	 * Version of the last committed change.
+	 */
+	uint32_t schema_version;
+	bool is_tombstone;
 };
 
 /**
@@ -85,6 +90,9 @@ schema_module_free(void);
 
 struct func *
 func_new(struct func_def *def);
+
+struct func *
+func_dup(struct func *func);
 
 void
 func_delete(struct func *func);

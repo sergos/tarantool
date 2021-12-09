@@ -413,7 +413,27 @@ func_new(struct func_def *def)
 	 * checks (see user_has_data()).
 	 */
 	credentials_create_empty(&func->owner_credentials);
+	func->schema_version = schema_version;
+	func->is_tombstone = false;
 	return func;
+}
+
+struct func *
+func_dup(struct func *func)
+{
+	struct func_def *def_dup = func_def_dup(func->def);
+	if (def_dup == NULL)
+		return NULL;
+	struct func *func_dup = func_new(def_dup);
+	if (func_dup == NULL)
+		return NULL;
+	size_t copy_sz =
+		sizeof(*func_dup) - offsetof(struct func, owner_credentials);
+	memcpy(&func_dup->owner_credentials, &func->owner_credentials,
+	       copy_sz);
+	func_dup->def = def_dup;
+	func_dup->schema_version = schema_version;
+	return func_dup;
 }
 
 static struct func *

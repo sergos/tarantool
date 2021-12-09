@@ -39,6 +39,7 @@
 #include "vclock/vclock.h"
 #include "fiber.h"
 #include "memtx_tx.h"
+#include "txn.h"
 
 /**
  * @module Data Dictionary
@@ -260,7 +261,8 @@ on_replace_dd_system_space(struct trigger *trigger, void *event)
 {
 	(void) trigger;
 	struct txn *txn = (struct txn *) event;
-	memtx_tx_acquire_ddl(txn);
+	(void) txn;
+	//memtx_tx_acquire_ddl(txn);
 	return 0;
 }
 
@@ -540,6 +542,8 @@ schema_free(void)
 		func_delete(func);
 	}
 	mh_i32ptr_delete(funcs);
+	mh_strnptr_delete(funcs_by_name);
+
 	while (mh_size(sequences) > 0) {
 		mh_int_t i = mh_first(sequences);
 
@@ -550,11 +554,32 @@ schema_free(void)
 	mh_i32ptr_delete(sequences);
 }
 
-void
-func_cache_insert(struct func *func)
+static struct func *
+func_by_id_internal(mh_i32ptr_t *cache, uint32_t fid)
 {
-	assert(func_by_id(func->def->fid) == NULL);
-	assert(func_by_name(func->def->name, strlen(func->def->name)) == NULL);
+	mh_int_t func = mh_i32ptr_find(cache, fid, NULL);
+	if (func == mh_end(cache))
+		return NULL;
+	return (struct func *) mh_i32ptr_node(cache, func)->val;
+}
+
+static struct func *
+func_by_name_internal(mh_strnptr_t *cache, const char *name, uint32_t name_len)
+{
+	mh_int_t func = mh_strnptr_find_inp(cache, name, name_len);
+	if (func == mh_end(cache))
+		return NULL;
+	return (struct func *) mh_strnptr_node(cache, func)->val;
+}
+
+static void
+func_cache_insert_internal(struct mh_i32ptr_t *funcs,
+			   struct mh_strnptr_t *funcs_by_name,
+			   struct func *func)
+{
+	assert(func_by_id_internal(funcs, func->def->fid) == NULL);
+	assert(func_by_name_internal(funcs_by_name, func->def->name,
+				     strlen(func->def->name)) == NULL);
 	const struct mh_i32ptr_node_t node = { func->def->fid, func };
 	mh_i32ptr_put(funcs, &node, NULL, NULL);
 	size_t def_name_len = strlen(func->def->name);
@@ -565,7 +590,23 @@ func_cache_insert(struct func *func)
 }
 
 void
-func_cache_delete(uint32_t fid)
+func_cache_insert(struct func *func)
+{
+	func_cache_insert_internal(funcs, funcs_by_name, func);
+}
+
+void
+tx_func_cache_insert(struct func *func)
+{
+	struct txn *txn = in_txn();
+	assert(txn != NULL);
+	func_cache_insert_internal(txn->funcs, txn->funcs_by_name, func);
+}
+
+static void
+func_cache_delete_internal(struct mh_i32ptr_t *funcs,
+			   struct mh_strnptr_t *funcs_by_name,
+			   uint32_t fid)
 {
 	mh_int_t k = mh_i32ptr_find(funcs, fid, NULL);
 	if (k == mh_end(funcs))
@@ -579,22 +620,60 @@ func_cache_delete(uint32_t fid)
 		mh_strnptr_del(funcs_by_name, k, NULL);
 }
 
+void
+func_cache_delete(uint32_t fid)
+{
+	func_cache_delete_internal(funcs, funcs_by_name, fid);
+}
+
+void
+tx_func_cache_delete(uint32_t fid)
+{
+	struct txn *txn = in_txn();
+	assert(txn != NULL);
+	func_cache_delete_internal(txn->funcs, txn->funcs_by_name, fid);
+}
+
 struct func *
 func_by_id(uint32_t fid)
 {
-	mh_int_t func = mh_i32ptr_find(funcs, fid, NULL);
-	if (func == mh_end(funcs))
+	struct func *func = tx_func_by_id(fid);
+	if (func != NULL) {
+		/* This function is to be deleted while current tx is committed. */
+		if (func->is_tombstone)
+			return NULL;
+		return func;
+	}
+	return func_by_id_internal(funcs, fid);
+}
+
+struct func *
+tx_func_by_id(uint32_t fid)
+{
+	struct txn *txn = in_txn();
+	if (txn == NULL)
 		return NULL;
-	return (struct func *) mh_i32ptr_node(funcs, func)->val;
+
+	return func_by_id_internal(txn->funcs, fid);
 }
 
 struct func *
 func_by_name(const char *name, uint32_t name_len)
 {
-	mh_int_t func = mh_strnptr_find_inp(funcs_by_name, name, name_len);
-	if (func == mh_end(funcs_by_name))
+	return func_by_name_internal(funcs_by_name, name, name_len);
+}
+
+struct func *
+tx_func_by_name(const char *name, uint32_t name_len)
+{
+	struct txn *txn = in_txn();
+	if (txn == NULL)
 		return NULL;
-	return (struct func *) mh_strnptr_node(funcs_by_name, func)->val;
+	struct func *func =
+		func_by_name_internal(txn->funcs_by_name, name, name_len);
+	if (func != NULL && func->is_tombstone)
+		return NULL;
+	return func;
 }
 
 int

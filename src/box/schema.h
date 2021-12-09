@@ -94,13 +94,25 @@ void
 func_cache_insert(struct func *func);
 
 void
+tx_func_cache_insert(struct func *func);
+
+void
 func_cache_delete(uint32_t fid);
+
+void
+tx_func_cache_delete(uint32_t fid);
 
 struct func *
 func_by_id(uint32_t fid);
 
 struct func *
+tx_func_by_id(uint32_t fid);
+
+struct func *
 func_by_name(const char *name, uint32_t name_len);
+
+struct func *
+tx_func_by_name(const char *name, uint32_t name_len);
 
 /** Call a visitor function on every space in the space cache. */
 int

@@ -3507,20 +3507,63 @@ func_def_new_from_tuple(struct tuple *tuple)
 static int
 on_create_func_rollback(struct trigger *trigger, void * /* event */)
 {
-	/* Remove the new function from the cache and delete it. */
+	/*
+	 * Remove the new function from the TX cache and delete it.
+	 * At this point it is enough since all committed modifications
+	 * are made in on_commit trigger.
+	 */
 	struct func *func = (struct func *)trigger->data;
-	func_cache_delete(func->def->fid);
+	assert(!func->is_tombstone);
+	struct func *cached = tx_func_by_id(func->def->fid);
+	if (cached != NULL && cached->schema_version == func->schema_version) {
+		assert(cached == func);
+		tx_func_cache_delete(func->def->fid);
+	}
+	func_delete(func);
+	return 0;
+}
+
+static int
+on_create_func_commit(struct trigger *trigger, void * /* event */)
+{
+	struct func *func = (struct func *)trigger->data;
+	assert(!func->is_tombstone);
+	struct func *cached = tx_func_by_id(func->def->fid);
+	assert(func->def->fid == cached->def->fid);
+	/*
+	 * This is last made change to cache so we have to remove entry
+	 * from local cache.
+	 */
+	if (cached->schema_version == func->schema_version) {
+		assert(cached == func);
+		tx_func_cache_delete(func->def->fid);
+	}
+	/*
+	 * At this point function is missing in global cache so it's ok
+	 * to replace. Otherwise means that some transaction has committed
+	 * function with the same ID and hasn't aborted this TX, which means
+	 * that smth went really wrong.
+	 */
+	func_cache_insert(func);
 	if (trigger_run(&on_alter_func, func) != 0)
 		return -1;
-	func_delete(func);
 	return 0;
 }
 
 static int
 on_drop_func_commit(struct trigger *trigger, void * /* event */)
 {
-	/* Delete the old function. */
 	struct func *func = (struct func *)trigger->data;
+	assert(func->is_tombstone);
+	struct func *cached = tx_func_by_id(func->def->fid);
+	assert(func->def->fid == cached->def->fid);
+	func_cache_delete(func->def->fid);
+	if (cached->schema_version == func->schema_version) {
+		tx_func_cache_delete(func->def->fid);
+		assert(cached == func);
+	}
+	if (trigger_run(&on_alter_func, func) != 0)
+		return -1;
 	func_delete(func);
 	return 0;
 }
@@ -3530,9 +3573,13 @@ on_drop_func_rollback(struct trigger *trigger, void * /* event */)
 {
 	/* Insert the old function back into the cache. */
 	struct func *func = (struct func *)trigger->data;
-	func_cache_insert(func);
-	if (trigger_run(&on_alter_func, func) != 0)
-		return -1;
+	assert(func->is_tombstone);
+	struct func *cached = tx_func_by_id(func->def->fid);
+	if (cached != NULL && cached->schema_version == func->schema_version) {
+		assert(cached == func);
+		tx_func_cache_delete(func->def->fid);
+	}
+	func_delete(func);
 	return 0;
 }
 
@@ -3553,7 +3600,7 @@ on_replace_dd_func(struct trigger * /* trigger */, void *event)
 			    BOX_FUNC_FIELD_ID, &fid) != 0)
 		return -1;
 	struct func *old_func = func_by_id(fid);
-	if (new_tuple != NULL && old_func == NULL) { /* INSERT */
+	if (new_tuple != NULL && old_tuple == NULL) { /* INSERT */
 		struct func_def *def = func_def_new_from_tuple(new_tuple);
 		if (def == NULL)
 			return -1;
@@ -3565,19 +3612,31 @@ on_replace_dd_func(struct trigger * /* trigger */, void *event)
 			txn_alter_trigger_new(on_create_func_rollback, NULL);
 		if (on_rollback == NULL)
 			return -1;
+		struct trigger *on_commit =
+			txn_alter_trigger_new(on_create_func_commit, NULL);
+		if (on_commit == NULL)
+			return -1;
 		struct func *func = func_new(def);
 		if (func == NULL)
 			return -1;
 		def_guard.is_active = false;
-		func_cache_insert(func);
+		struct func *old = tx_func_by_id(fid);
+		if (old != NULL) {
+			assert(old->is_tombstone);
+			assert(func_by_id(fid) == NULL);
+			/* Delete tombstone inserted by previous DROP */
+			tx_func_cache_delete(old->def->fid);
+		}
+		tx_func_cache_insert(func);
 		on_rollback->data = func;
+		on_commit->data = func;
 		txn_stmt_on_rollback(stmt, on_rollback);
-		if (trigger_run(&on_alter_func, func) != 0)
-			return -1;
+		txn_stmt_on_commit(stmt, on_commit);
 	} else if (new_tuple == NULL) {         /* DELETE */
 		uint32_t uid;
 		if (func_def_get_ids_from_tuple(old_tuple, &fid, &uid) != 0)
 			return -1;
+		assert(old_func != NULL);
 		/*
 		 * Can only delete func if you're the one
 		 * who created it or a superuser.
@@ -3604,17 +3663,27 @@ on_replace_dd_func(struct trigger * /* trigger */, void *event)
 				  "function has references");
 			return -1;
 		}
+		struct func *old_func_dup = func_dup(old_func);
+		if (old_func_dup == NULL)
+			return -1;
 		struct trigger *on_commit =
-			txn_alter_trigger_new(on_drop_func_commit, old_func);
+			txn_alter_trigger_new(on_drop_func_commit, NULL);
 		struct trigger *on_rollback =
-			txn_alter_trigger_new(on_drop_func_rollback, old_func);
+			txn_alter_trigger_new(on_drop_func_rollback, NULL);
 		if (on_commit == NULL || on_rollback == NULL)
 			return -1;
-		func_cache_delete(old_func->def->fid);
+		on_commit->data = old_func_dup;
+		on_rollback->data = old_func_dup;
+		assert(old_func_dup->def != NULL);
+		old_func_dup->is_tombstone = true;
+		struct func *tx_entry = tx_func_by_id(fid);
+		if (tx_entry != NULL) {
+			assert(!tx_entry->is_tombstone);
+			tx_func_cache_delete(fid);
+		}
+		tx_func_cache_insert(old_func_dup);
 		txn_stmt_on_commit(stmt, on_commit);
 		txn_stmt_on_rollback(stmt, on_rollback);
-		if (trigger_run(&on_alter_func, old_func) != 0)
-			return -1;
 	} else {                                /* UPDATE, REPLACE */
 		assert(new_tuple != NULL && old_tuple != NULL);
 		/**
@@ -3636,6 +3705,7 @@ on_replace_dd_func(struct trigger * /* trigger */, void *event)
 			return -1;
 		}
 	}
+	schema_version++;
 	return 0;
 }
 

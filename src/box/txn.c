@@ -28,6 +28,7 @@
  * THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+#include "assoc.h"
 #include "txn.h"
 #include "memtx_tx.h"
 #include "txn_limbo.h"
@@ -216,8 +217,13 @@ txn_rollback_to_svp(struct txn *txn, struct stailq_entry *svp)
 inline static struct txn *
 txn_new(void)
 {
-	if (!stailq_empty(&txn_cache))
-		return stailq_shift_entry(&txn_cache, struct txn, in_txn_cache);
+	if (!stailq_empty(&txn_cache)) {
+		struct txn *txn =
+			stailq_shift_entry(&txn_cache, struct txn, in_txn_cache);
+		assert(mh_size(txn->funcs) == 0);
+		assert(mh_size(txn->funcs_by_name) == 0);
+		return txn;
+	}
 
 	/* Create a region. */
 	struct region region;
@@ -240,6 +246,8 @@ txn_new(void)
 	rlist_create(&txn->conflicted_by_list);
 	rlist_create(&txn->in_read_view_txs);
 	rlist_create(&txn->in_all_txs);
+	txn->funcs = mh_i32ptr_new();
+	txn->funcs_by_name = mh_strnptr_new();
 	return txn;
 }
 
@@ -280,6 +288,9 @@ txn_free(struct txn *txn)
 	struct txn_stmt *stmt;
 	stailq_foreach_entry(stmt, &txn->stmts, next)
 		txn_stmt_destroy(stmt);
+
+	assert(mh_size(txn->funcs) == 0);
+	assert(mh_size(txn->funcs_by_name) == 0);
 
 	/* Truncate region up to struct txn size. */
 	region_truncate(&txn->region, sizeof(struct txn));

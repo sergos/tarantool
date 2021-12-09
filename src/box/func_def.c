@@ -121,3 +121,23 @@ func_def_check(struct func_def *def)
 	}
 	return 0;
 }
+
+struct func_def *
+func_def_dup(struct func_def *def)
+{
+	uint32_t body_offset = 0;
+	uint32_t comment_offset = 0;
+	uint32_t body_len = def->body != NULL ? strlen(def->body) : 0;
+	uint32_t comment_len = def->comment != NULL ? strlen(def->comment) : 0;
+
+	size_t func_def_sz =
+		func_def_sizeof(def->name_len, body_len, comment_len,
+				&body_offset, &comment_offset);
+	struct func_def *dup = (struct func_def *) malloc(func_def_sz);
+	if (dup == NULL) {
+		diag_set(OutOfMemory, func_def_sz, "malloc", "func_def");
+		return NULL;
+	}
+	memcpy(dup, def, func_def_sz);
+	return dup;
+}

@@ -1,0 +1,542 @@
+-- test-run result file version 2
+env = require('test_run')
+ | ---
+ | ...
+test_run = env.new()
+ | ---
+ | ...
+test_run:cmd("create server tx_man with script='box/tx_man.lua'")
+ | ---
+ | - true
+ | ...
+test_run:cmd("start server tx_man")
+ | ---
+ | - true
+ | ...
+test_run:cmd("switch tx_man")
+ | ---
+ | - true
+ | ...
+
+
+txn_proxy = require('txn_proxy')
+ | ---
+ | ...
+tx1 = txn_proxy.new()
+ | ---
+ | ...
+tx2 = txn_proxy.new()
+ | ---
+ | ...
+
+id = 666
+ | ---
+ | ...
+function setmap(tab) return setmetatable(tab, { __serialize = 'map' }) end
+ | ---
+ | ...
+
+------------------- INSERT + DELETE + INSERT + COMMIT -------------------------------
+
+tx1:begin()
+ | ---
+ | - 
+ | ...
+_ = tx1("box.space._func:insert{id, 1, 'f1', 0, 'C', '', 'function', {}, 'any', 'none', 'none', false, false, true, {\"LUA\"}, setmap({}), '', '', ''}")
+ | ---
+ | ...
+_ = tx1("box.space._func:delete({id})")
+ | ---
+ | ...
+_ = tx1("box.space._func:insert{id, 1, 'f2', 0, 'LUA', '', 'function', {}, 'any', 'none', 'none', false, false, true, {\"LUA\"}, setmap({}), '', '', ''}")
+ | ---
+ | ...
+tx1:commit()
+ | ---
+ | - 
+ | ...
+
+assert(box.func.f1 == nil)
+ | ---
+ | - true
+ | ...
+assert(box.func.f2.language == 'LUA')
+ | ---
+ | - true
+ | ...
+assert(box.space._func:get({666})[5] == 'LUA')
+ | ---
+ | - true
+ | ...
+
+------------------- DELETE + INSERT + DELETE + COMMIT -------------------------------
+
+tx1:begin()
+ | ---
+ | - 
+ | ...
+_ = tx1("box.space._func:delete({id})")
+ | ---
+ | ...
+_ = tx1("box.space._func:insert{id, 1, 'f1', 0, 'C', '', 'function', {}, 'any', 'none', 'none', false, false, true, {\"LUA\"}, setmap({}), '', '', ''}")
+ | ---
+ | ...
+_ = tx1("box.space._func:delete({id})")
+ | ---
+ | ...
+tx1:commit()
+ | ---
+ | - 
+ | ...
+
+assert(box.func.f2 == nil)
+ | ---
+ | - true
+ | ...
+assert(box.func.f1 == nil)
+ | ---
+ | - true
+ | ...
+assert(box.space._func:get({666}) == nil)
+ | ---
+ | - true
+ | ...
+
+------------------- INSERT + DELETE + COMMIT -------------------------------
+
+tx1:begin()
+ | ---
+ | - 
+ | ...
+_ = tx1("box.space._func:insert{id, 1, 'f1', 0, 'C', '', 'function', {}, 'any', 'none', 'none', false, false, true, {\"LUA\"}, setmap({}), '', '', ''}")
+ | ---
+ | ...
+_ = tx1("box.space._func:delete({id})")
+ | ---
+ | ...
+tx1:commit()
+ | ---
+ | - 
+ | ...
+
+assert(box.func.f1 == nil)
+ | ---
+ | - true
+ | ...
+assert(box.space._func:get({666}) == nil)
+ | ---
+ | - true
+ | ...
+
+------------------- DELETE + INSERT + COMMIT -------------------------------
+
+_ = box.space._func:insert{id, 1, 'f2', 0, 'LUA', '', 'function', {}, 'any', 'none', 'none', false, false, true, {"LUA"}, setmap({}), '', '', ''}
+ | ---
+ | ...
+
+tx1:begin()
+ | ---
+ | - 
+ | ...
+_ = tx1("box.space._func:delete({id})")
+ | ---
+ | ...
+_ = tx1("box.space._func:insert{id, 1, 'f2', 0, 'C', '', 'function', {}, 'any', 'none', 'none', false, false, true, {\"LUA\"}, setmap({}), '', '', ''}")
+ | ---
+ | ...
+tx1:commit()
+ | ---
+ | - 
+ | ...
+
+assert(box.func.f1 == nil)
+ | ---
+ | - true
+ | ...
+assert(box.func.f2.language == 'C')
+ | ---
+ | - true
+ | ...
+assert(box.space._func:get({666})[5] == 'C')
+ | ---
+ | - true
+ | ...
+
+------------------- DELETE + ROLLBACK -----------------------------------------------
+
+tx1:begin()
+ | ---
+ | - 
+ | ...
+_ = tx1("box.space._func:delete{id}")
+ | ---
+ | ...
+tx1:rollback()
+ | ---
+ | - 
+ | ...
+
+assert(box.func.f2.language == 'C')
+ | ---
+ | - true
+ | ...
+assert(box.space._func:get({666})[5] == 'C')
+ | ---
+ | - true
+ | ...
+_ = box.space._func:delete{id}
+ | ---
+ | ...
+
+------------------- INSERT + ROLLBACK -----------------------------------------------
+
+tx1:begin()
+ | ---
+ | - 
+ | ...
+_ = tx1("box.space._func:insert{id, 1, 'f1', 0, 'C', '', 'function', {}, 'any', 'none', 'none', false, false, true, {\"LUA\"}, setmap({}), '', '', ''}")
+ | ---
+ | ...
+tx1:rollback()
+ | ---
+ | - 
+ | ...
+
+assert(box.func.f1 == nil)
+ | ---
+ | - true
+ | ...
+assert(box.space._func:get({666}) == nil)
+ | ---
+ | - true
+ | ...
+
+------------------- INSERT + DELETE + ROLLBACK -------------------------------
+
+tx1:begin()
+ | ---
+ | - 
+ | ...
+_ = tx1("box.space._func:insert{id, 1, 'f1', 0, 'C', '', 'function', {}, 'any', 'none', 'none', false, false, true, {\"LUA\"}, setmap({}), '', '', ''}")
+ | ---
+ | ...
+_ = tx1("box.space._func:delete({id})")
+ | ---
+ | ...
+tx1:rollback()
+ | ---
+ | - 
+ | ...
+
+assert(box.func.f1 == nil)
+ | ---
+ | - true
+ | ...
+assert(box.space._func:get({666}) == nil)
+ | ---
+ | - true
+ | ...
+
+------------------- DELETE + INSERT + ROLLBACK -------------------------------
+
+_ = box.space._func:insert{id, 1, 'f2', 0, 'LUA', '', 'function', {}, 'any', 'none', 'none', false, false, true, {"LUA"}, setmap({}), '', '', ''}
+ | ---
+ | ...
+
+tx1:begin()
+ | ---
+ | - 
+ | ...
+_ = tx1("box.space._func:delete({id})")
+ | ---
+ | ...
+_ = tx1("box.space._func:insert{id, 1, 'f1', 0, 'C', '', 'function', {}, 'any', 'none', 'none', false, false, true, {\"LUA\"}, setmap({}), '', '', ''}")
+ | ---
+ | ...
+tx1:rollback()
+ | ---
+ | - 
+ | ...
+
+assert(box.func.f1 == nil)
+ | ---
+ | - true
+ | ...
+assert(box.func.f2.language == 'LUA')
+ | ---
+ | - true
+ | ...
+assert(box.space._func:get({666})[5] == 'LUA')
+ | ---
+ | - true
+ | ...
+
+_ = box.space._func:delete{id}
+ | ---
+ | ...
+
+------------------- INSERT + DELETE + INSERT + ROLLBACK -----------------------------
+
+tx1:begin()
+ | ---
+ | - 
+ | ...
+_ = tx1("box.space._func:insert{id, 1, 'f1', 0, 'C', '', 'function', {}, 'any', 'none', 'none', false, false, true, {\"LUA\"}, setmap({}), '', '', ''}")
+ | ---
+ | ...
+_ = tx1("box.space._func:delete({id})")
+ | ---
+ | ...
+_ = tx1("box.space._func:insert{id, 1, 'f2', 0, 'LUA', '', 'function', {}, 'any', 'none', 'none', false, false, true, {\"LUA\"}, setmap({}), '', '', ''}")
+ | ---
+ | ...
+tx1:rollback()
+ | ---
+ | - 
+ | ...
+
+assert(box.func.f1 == nil)
+ | ---
+ | - true
+ | ...
+assert(box.func.f2 == nil)
+ | ---
+ | - true
+ | ...
+assert(box.space._func:get({666}) == nil)
+ | ---
+ | - true
+ | ...
+
+------------------- DELETE + INSERT + DELETE + ROLLBACK -----------------------------
+
+_ = box.space._func:insert{id, 1, 'f1', 0, 'C', '', 'function', {}, 'any', 'none', 'none', false, false, true, {"LUA"}, setmap({}), '', '', ''}
+ | ---
+ | ...
+
+tx1:begin()
+ | ---
+ | - 
+ | ...
+_ = tx1("box.space._func:delete({id})")
+ | ---
+ | ...
+_ = tx1("box.space._func:insert{id, 1, 'f2', 0, 'LUA', '', 'function', {}, 'any', 'none', 'none', false, false, true, {\"LUA\"}, setmap({}), '', '', ''}")
+ | ---
+ | ...
+_ = tx1("box.space._func:delete({id})")
+ | ---
+ | ...
+tx1:rollback()
+ | ---
+ | - 
+ | ...
+
+assert(box.func.f1.language == 'C')
+ | ---
+ | - true
+ | ...
+assert(box.func.f2 == nil)
+ | ---
+ | - true
+ | ...
+assert(box.space._func:get({666})[5] == 'C')
+ | ---
+ | - true
+ | ...
+
+_ = box.space._func:delete{id}
+ | ---
+ | ...
+
+tx1:begin()
+ | ---
+ | - 
+ | ...
+tx2:begin()
+ | ---
+ | - 
+ | ...
+
+_ = tx1("box.space._func:insert{id, 1, 'f1', 0, 'C', '', 'function', {}, 'any', 'none', 'none', false, false, true, {\"LUA\"}, setmap({}), '', '', ''}")
+ | ---
+ | ...
+_ = tx2("box.space._func:insert{id, 1, 'f1', 0, 'LUA', '', 'function', {}, 'any', 'none', 'none', false, false, true, {\"LUA\"}, setmap({}), '', '', ''}")
+ | ---
+ | ...
+
+tx1:rollback()
+ | ---
+ | - 
+ | ...
+tx2:commit()
+ | ---
+ | - 
+ | ...
+
+assert(box.func.f1.language == 'LUA')
+ | ---
+ | - true
+ | ...
+assert(box.space._func:get({666})[5] == 'LUA')
+ | ---
+ | - true
+ | ...
+
+_ = box.space._func:delete({666})
+ | ---
+ | ...
+
+tx1:begin()
+ | ---
+ | - 
+ | ...
+tx2:begin()
+ | ---
+ | - 
+ | ...
+
+_ = tx1("box.space._func:insert{id, 1, 'f1', 0, 'C', '', 'function', {}, 'any', 'none', 'none', false, false, true, {\"LUA\"}, setmap({}), '', '', ''}")
+ | ---
+ | ...
+_ = tx2("box.space._func:insert{id+1, 1, 'f1', 0, 'LUA', '', 'function', {}, 'any', 'none', 'none', false, false, true, {\"LUA\"}, setmap({}), '', '', ''}")
+ | ---
+ | ...
+
+tx1:commit()
+ | ---
+ | - 
+ | ...
+tx2:commit()
+ | ---
+ | - - {'error': 'Transaction has been aborted by conflict'}
+ | ...
+
+assert(box.func.f1.language == 'C')
+ | ---
+ | - true
+ | ...
+assert(box.space._func:get({666})[5] == 'C')
+ | ---
+ | - true
+ | ...
+
+_ = box.space._func:delete({666})
+ | ---
+ | ...
+
+tx1:begin()
+ | ---
+ | - 
+ | ...
+tx2:begin()
+ | ---
+ | - 
+ | ...
+
+_ = tx1("box.space._func:replace{id, 1, 'f1', 0, 'C', '', 'function', {}, 'any', 'none', 'none', false, false, true, {\"LUA\"}, setmap({}), '', '', ''}")
+ | ---
+ | ...
+_ = tx2("box.space._func:replace{id+1, 1, 'f1', 0, 'LUA', '', 'function', {}, 'any', 'none', 'none', false, false, true, {\"LUA\"}, setmap({}), '', '', ''}")
+ | ---
+ | ...
+
+tx1:commit()
+ | ---
+ | - 
+ | ...
+tx2:commit()
+ | ---
+ | - - {'error': 'Transaction has been aborted by conflict'}
+ | ...
+
+assert(box.func.f1.language == 'C')
+ | ---
+ | - true
+ | ...
+assert(box.space._func:get({666})[5] == 'C')
+ | ---
+ | - true
+ | ...
+
+_ = box.space._func:delete({666})
+ | ---
+ | ...
+
+tx1:begin()
+ | ---
+ | - 
+ | ...
+tx2:begin()
+ | ---
+ | - 
+ | ...
+
+_ = tx1("box.space._func:insert{id, 1, 'f1', 0, 'C', '', 'function', {}, 'any', 'none', 'none', false, false, true, {\"LUA\"}, setmap({}), '', '', ''}")
+ | ---
+ | ...
+_ = tx2("box.space._func:insert{id, 1, 'f1', 0, 'LUA', '', 'function', {}, 'any', 'none', 'none', false, false, true, {\"LUA\"}, setmap({}), '', '', ''}")
+ | ---
+ | ...
+_ = tx1("box.space._func:delete({id})")
+ | ---
+ | ...
+
+tx1:commit()
+ | ---
+ | - 
+ | ...
+tx2:commit()
+ | ---
+ | - - {'error': 'Transaction has been aborted by conflict'}
+ | ...
+
+assert(box.func.f1 == nil)
+ | ---
+ | - true
+ | ...
+assert(box.space._func:get({666}) == nil)
+ | ---
+ | - true
+ | ...
+
+tx1:begin()
+ | ---
+ | - 
+ | ...
+tx2:begin()
+ | ---
+ | - 
+ | ...
+
+_ = tx1("box.space._func:insert{id, 1, 'f1', 0, 'C', '', 'function', {}, 'any', 'none', 'none', false, false, true, {\"LUA\"}, setmap({}), '', '', ''}")
+ | ---
+ | ...
+_ = tx2("box.space._func:insert{id, 1, 'f1', 0, 'LUA', '', 'function', {}, 'any', 'none', 'none', false, false, true, {\"LUA\"}, setmap({}), '', '', ''}")
+ | ---
+ | ...
+_ = tx1("box.space._func:delete({id})")
+ | ---
+ | ...
+
+tx1:rollback()
+ | ---
+ | - 
+ | ...
+tx2:commit()
+ | ---
+ | - 
+ | ...
+
+test_run:cmd("switch default")
+ | ---
+ | - true
+ | ...
+test_run:cmd("stop server tx_man")
+ | ---
+ | - true
+ | ...
+test_run:cmd("cleanup server tx_man")
+ | ---
+ | - true
+ | ...

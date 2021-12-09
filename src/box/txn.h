@@ -445,6 +445,8 @@ struct txn {
 	 * to complete within the timeout specified when it was created.
 	 */
 	struct ev_timer *rollback_timer;
+	struct mh_i32ptr_t *funcs;
+	struct mh_strnptr_t *funcs_by_name;
 };
 
 static inline bool
