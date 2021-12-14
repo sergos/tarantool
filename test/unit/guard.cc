@@ -28,16 +28,17 @@ stack_break_f(char *ptr)
 	return sum;
 }
 
-static char stack_buf[SIGSTKSZ];
-
 static int
 main_f(va_list ap)
 {
 	stack_t stack;
-	stack.ss_sp = stack_buf;
-	stack.ss_size = SIGSTKSZ;
 	stack.ss_flags = 0;
-	sigaltstack(&stack, NULL);
+	stack.ss_size = SIGSTKSZ;
+	stack.ss_sp = xmalloc(stack.ss_size);
+	if (sigaltstack(&stack, NULL) < 0) {
+		perror("sigaltstack");
+		exit(1);
+	}
 	struct sigaction sa;
 	sa.sa_handler = sigsegf_handler;
 	sigemptyset(&sa.sa_mask);
@@ -48,6 +49,7 @@ main_f(va_list ap)
 	int res = stack_break_f((char *)&stack);
 
 	ev_break(loop(), EVBREAK_ALL);
+	free(stack.ss_sp);
 	return res;
 }
 
