@@ -53,8 +53,8 @@ jobs:
           name: perf_cbench
           retention-days: 21
           path: |
-            ./bench-run/benchs/cbench/*_result.txt
-            ./bench-run/benchs/cbench/*_t_version.txt
+            ./bench-run/benchs/cbench/cbench/*_result.txt
+            ./bench-run/benchs/cbench/cbench/*_t_version.txt
 
 # TODO: set up publishing in same job
   publish:
