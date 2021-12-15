@@ -452,9 +452,19 @@ iterator_create(struct iterator *it, struct index *index)
 	it->index = index;
 }
 
+static inline bool
+fiber_box_timed_out(struct fiber *f)
+{
+	return f->deadline_timeout < fiber_time_from_call(f);
+}
+
 int
 iterator_next(struct iterator *it, struct tuple **ret)
 {
+	if (fiber_box_timed_out(fiber())) {
+		diag_set(TimedOut);
+		return -1;
+	}
 	assert(it->next != NULL);
 	/* In case of ephemeral space there is no need to check schema version */
 	if (it->space_id == 0)

@@ -84,6 +84,7 @@
 #include "watcher.h"
 #include "trivia/util.h"
 #include "version.h"
+#include "box_timeout.h"
 
 static char status[64] = "unknown";
 
@@ -3604,6 +3605,7 @@ box_init(void)
 	sequence_init();
 	box_raft_init();
 	box_watcher_init();
+	box_timeout_init();
 }
 
 bool

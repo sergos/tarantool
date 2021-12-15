@@ -403,6 +403,8 @@ fiber_call_impl(struct fiber *callee)
 	cord->fiber = callee;
 	callee->flags = (callee->flags & ~FIBER_IS_READY) | FIBER_IS_RUNNING;
 
+	callee->call_time = clock_monotonic64();
+
 	ASAN_START_SWITCH_FIBER(asan_state, 1,
 				callee->stack,
 				callee->stack_size);
@@ -686,6 +688,8 @@ fiber_yield(void)
 
 	if (cord_is_main())
 		cord_on_yield();
+
+	callee->call_time = clock_monotonic64();
 
 	clock_set_on_csw(caller);
 
@@ -1264,6 +1268,10 @@ fiber_new_ex(const char *name, const struct fiber_attr *fiber_attr,
 	fiber->fid = cord->next_fid;
 	fiber_set_name(fiber, name);
 	register_fid(fiber);
+	fiber->call_time = 0;
+	/** Default value for proof-of-concept. */
+	const uint64_t SECOND = 1000000000;
+	fiber->deadline_timeout = 100 * SECOND;
 	fiber->csw = 0;
 
 	cord->next_fid++;
@@ -1316,6 +1324,8 @@ fiber_destroy(struct cord *cord, struct fiber *f)
 	if (f->name != f->inline_name)
 		free(f->name);
 	f->name = NULL;
+	f->call_time = 0;
+	f->deadline_timeout = 0;
 }
 
 void
