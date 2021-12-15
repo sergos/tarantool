@@ -36,6 +36,7 @@ jobs:
       - name: tarantool build
         run: |
           cmake . -DENABLE_DIST=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo && make -j 4
+        working-directory: ./bench-run/benchs/cbench/cbench
       - name: run benchmark
         run: cp ../run.sh ./run.sh && ./run.sh
         working-directory: ./bench-run/benchs/cbench/cbench
