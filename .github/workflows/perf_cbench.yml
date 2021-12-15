@@ -31,14 +31,14 @@ jobs:
       - name: checkout cbench repo
         uses: actions/checkout@v2.3.4
         with:
-          path: cbench
+          path: ./bench-run/benchs/cbench/cbench
           repository: tarantool/cbench
       - name: tarantool build
         run: |
           cmake . -DENABLE_DIST=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo && make -j 4
       - name: run benchmark
-        run: ./run.sh
-        working-directory: ./bench-run/benchs/cbench
+        run: cp ../run.sh ./run.sh && ./run.sh
+        working-directory: ./bench-run/benchs/cbench/cbench
       - name: call action to send Telegram message on failure
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_CORE_TOKEN }}
