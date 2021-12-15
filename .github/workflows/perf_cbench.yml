@@ -8,7 +8,7 @@ on:
     types: [backend_automation]
   workflow_dispatch:
   schedule:
-    - cron:  '0 */3 * * *'
+    - cron:  '0 1 * * *'
 
 jobs:
   perf_cbench:
@@ -17,21 +17,28 @@ jobs:
         github.event_name == 'workflow_dispatch' ||
         github.event_name == 'schedule'
 
-    runs-on: perf-sh2
+    runs-on: perf-sh3
 
     strategy:
       fail-fast: false
 
     steps:
-      - name: set PATH to GIT of the newer version 2.9.0
-        run: echo "/usr/local/git/bin" | tee -a $GITHUB_PATH
-      - name: cleanup workspace
-        run: docker run -w /source -v ${PWD}:/source -i centos:8 /bin/bash -c "chown -R $(id -u):$(id -g) * .[^.]*"
-      - uses: actions/checkout@v1
-      - name: test
-        env:
-          BENCH: 'cbench'
-        uses: ./.github/actions/perf
+#      TODO: migrate to v2 when Git 2.18 or higher would be available
+      - name: checkout tarantool
+        uses: actions/checkout@v1
+        with:
+          submodules: true
+      - name: checkout cbench repo
+        uses: actions/checkout@v2.3.4
+        with:
+          path: cbench
+          repository: tarantool/cbench
+      - name: tarantool build
+        run: |
+          cmake . -DENABLE_DIST=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo && make -j 4
+      - name: run benchmark
+        run: ./run.sh
+        working-directory: ./bench-run/benchs/cbench
       - name: call action to send Telegram message on failure
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_CORE_TOKEN }}
@@ -45,5 +52,39 @@ jobs:
           name: perf_cbench
           retention-days: 21
           path: |
-            *_result.txt
-            *_t_version.txt
+            ./bench-run/benchs/cbench/*_result.txt
+            ./bench-run/benchs/cbench/*_t_version.txt
+
+# TODO: set up publishing in same job
+  publish:
+    needs: perf_cbench
+    # TODO: either fix post request availability from perf machines or
+    # decide which boxes could be used
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: checkout tarantool
+        uses: actions/checkout@v2.3.4
+      - name: Download all workflow run artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: perf_cbench
+          path: ./bench-run/publish/perf_cbench
+      - name: set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.7
+      - name: install requirements
+        run: python3 -m pip install -r ./bench-run/publish/requirements.txt
+      - name: publish
+        env:
+          INFLUXDB_BUCKET_URL: ${{ secrets.INFLUXDB_BUCKET_URL }}
+          INFLUXDB_TOKEN: ${{ secrets.INFLUXDB_TOKEN }}
+        run: ./publish.py -f ./perf_cbench
+        working-directory: ./bench-run/publish
+      - name: call action to send Telegram message on failure
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_CORE_TOKEN }}
+          TELEGRAM_TO: ${{ secrets.TELEGRAM_CORE_TO }}
+        uses: ./.github/actions/send-telegram-notify
+        if: failure()
