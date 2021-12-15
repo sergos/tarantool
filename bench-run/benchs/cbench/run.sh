@@ -10,20 +10,20 @@ cbench_opts=500
 killall tarantool 2>/dev/null || true
 rm -rf 5* 0*
 sync && echo "sync passed" || echo "sync failed with error" $?
-echo 3 > /proc/sys/vm/drop_caches
-$numaopts tarantool /opt/cbench/cbench_runner.lua memtx 2>&1 | tee cbench_output_memtx.txt
+#sudo echo 3 > /proc/sys/vm/drop_caches
+$numaopts tarantool cbench_runner.lua memtx 2>&1 | tee cbench_output_memtx.txt
 
 killall tarantool 2>/dev/null || true
 rm -rf 5* 0*
 sync && echo "sync passed" || echo "sync failed with error" $?
-echo 3 > /proc/sys/vm/drop_caches
-$numaopts tarantool /opt/cbench/cbench_runner.lua vinyl fsync $cbench_opts 2>&1 | tee cbench_output_vinyl_fsync.txt
+#echo 3 > /proc/sys/vm/drop_caches
+$numaopts tarantool cbench_runner.lua vinyl fsync $cbench_opts 2>&1 | tee cbench_output_vinyl_fsync.txt
 
 killall tarantool 2>/dev/null || true
 rm -rf 5* 0*
 sync && echo "sync passed" || echo "sync failed with error" $?
-echo 3 > /proc/sys/vm/drop_caches
-$numaopts tarantool /opt/cbench/cbench_runner.lua vinyl write $cbench_opts 2>&1 | tee cbench_output_vinyl_write.txt
+#echo 3 > /proc/sys/vm/drop_caches
+$numaopts tarantool cbench_runner.lua vinyl write $cbench_opts 2>&1 | tee cbench_output_vinyl_write.txt
 
 grep "^?tab=cbench.tree" cbench_output_memtx.txt | \
   sed "s/.*name=//"| sed "s/&param=/:/"| sed "s/cb\./cb\.memtx\./"| \
