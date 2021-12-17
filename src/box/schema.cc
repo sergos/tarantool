@@ -710,13 +710,34 @@ schema_find_grants(const char *type, uint32_t id, bool *out)
 	return 0;
 }
 
+static struct sequence *
+sequence_by_id_internal(mh_i32ptr_t *cache, uint32_t id)
+{
+	mh_int_t k = mh_i32ptr_find(cache, id, NULL);
+	if (k == mh_end(cache))
+		return NULL;
+	return (struct sequence *) mh_i32ptr_node(cache, k)->val;
+}
+
 struct sequence *
 sequence_by_id(uint32_t id)
 {
-	mh_int_t k = mh_i32ptr_find(sequences, id, NULL);
-	if (k == mh_end(sequences))
+	struct sequence *seq = tx_sequence_by_id(id);
+	if (seq != NULL) {
+		if (seq->is_tombstone)
+			return NULL;
+		return seq;
+	}
+	return sequence_by_id_internal(sequences, id);
+}
+
+struct sequence *
+tx_sequence_by_id(uint32_t id) {
+	struct txn *txn = in_txn();
+	if (txn == NULL)
 		return NULL;
-	return (struct sequence *) mh_i32ptr_node(sequences, k)->val;
+
+	return sequence_by_id_internal(txn->sequences, id);
 }
 
 struct sequence *
@@ -728,21 +749,50 @@ sequence_cache_find(uint32_t id)
 	return seq;
 }
 
-void
-sequence_cache_insert(struct sequence *seq)
+static void
+sequence_cache_insert_internal(struct mh_i32ptr_t *sequences,
+			       struct sequence *seq)
 {
-	assert(sequence_by_id(seq->def->id) == NULL);
+	assert(sequence_by_id_internal(sequences, seq->def->id) == NULL);
 
 	struct mh_i32ptr_node_t node = { seq->def->id, seq };
 	mh_i32ptr_put(sequences, &node, NULL, NULL);
 }
 
 void
-sequence_cache_delete(uint32_t id)
+sequence_cache_insert(struct sequence *seq)
+{
+	sequence_cache_insert_internal(sequences, seq);
+}
+
+void
+tx_sequence_cache_insert(struct sequence *seq)
+{
+	struct txn *txn = in_txn();
+	assert(txn != NULL);
+	sequence_cache_insert_internal(txn->sequences, seq);
+}
+
+void
+sequence_cache_delete_internal(struct mh_i32ptr_t *sequences, uint32_t id)
 {
 	mh_int_t k = mh_i32ptr_find(sequences, id, NULL);
 	if (k != mh_end(sequences))
 		mh_i32ptr_del(sequences, k, NULL);
+}
+
+void
+sequence_cache_delete(uint32_t id)
+{
+	sequence_cache_delete_internal(sequences, id);
+}
+
+void
+tx_sequence_cache_delete(uint32_t id)
+{
+	struct txn *txn = in_txn();
+	assert(txn != NULL);
+	sequence_cache_delete_internal(txn->sequences, id);
 }
 
 const char *

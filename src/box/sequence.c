@@ -136,7 +136,31 @@ sequence_new(struct sequence_def *def)
 		return NULL;
 	}
 	seq->def = def;
+	seq->schema_version = schema_version;
 	return seq;
+}
+
+struct sequence *
+sequence_dup(struct sequence *sequence)
+{
+	size_t def_sz = sequence_def_sizeof(strlen(sequence->def->name));
+	struct sequence_def *def = (struct sequence_def *) malloc(def_sz);
+	if (def == NULL) {
+		diag_set(OutOfMemory, def_sz, "malloc", "sequence_def");
+		return NULL;
+	}
+	struct sequence *dup = calloc(1, sizeof(*dup));
+	if (dup == NULL) {
+		diag_set(OutOfMemory, sizeof(*dup), "calloc", "sequence");
+		return NULL;
+	}
+	memcpy(def, sequence->def, def_sz);
+	dup->def = def;
+	dup->is_generated = sequence->is_generated;
+	dup->schema_version = sequence->schema_version;
+	dup->is_tombstone = sequence->is_tombstone;
+	memcpy(dup->access, sequence->access, sizeof(dup->access[0]) * BOX_USER_MAX);
+	return dup;
 }
 
 void

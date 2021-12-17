@@ -4537,10 +4537,32 @@ on_create_sequence_rollback(struct trigger *trigger, void * /* event */)
 {
 	/* Remove the new sequence from the cache and delete it. */
 	struct sequence *seq = (struct sequence *)trigger->data;
-	sequence_cache_delete(seq->def->id);
+	assert(!seq->is_tombstone);
+	struct sequence *cached = tx_sequence_by_id(seq->def->id);
+	if (cached != NULL && cached->schema_version == seq->schema_version) {
+		assert(cached == seq);
+		tx_sequence_cache_delete(seq->def->id);
+	}
+	sequence_delete(seq);
+	return 0;
+}
+
+static int
+on_create_sequence_commit(struct trigger *trigger, void * /* event */)
+{
+	struct sequence *seq = (struct sequence *)trigger->data;
+	assert(!seq->is_tombstone);
+	struct sequence *cached = tx_sequence_by_id(seq->def->id);
+	assert(seq->def->id == cached->def->id);
+
+	if (cached->schema_version == seq->schema_version) {
+		assert(cached == seq);
+		tx_sequence_cache_delete(seq->def->id);
+	}
+
+	sequence_cache_insert(seq);
 	if (trigger_run(&on_alter_sequence, seq) != 0)
 		return -1;
-	sequence_delete(seq);
 	return 0;
 }
 
@@ -4549,6 +4571,16 @@ on_drop_sequence_commit(struct trigger *trigger, void * /* event */)
 {
 	/* Delete the old sequence. */
 	struct sequence *seq = (struct sequence *)trigger->data;
+	assert(seq->is_tombstone);
+	struct sequence *cached = tx_sequence_by_id(seq->def->id);
+	assert(seq->def->id == cached->def->id);
+	sequence_cache_delete(seq->def->id);
+	if (cached->schema_version == seq->schema_version) {
+		tx_sequence_cache_delete(seq->def->id);
+		assert(cached == seq);
+	}
+	if (trigger_run(&on_alter_sequence, seq) != 0)
+		return -1;
 	sequence_delete(seq);
 	return 0;
 }
@@ -4558,19 +4590,34 @@ on_drop_sequence_rollback(struct trigger *trigger, void * /* event */)
 {
 	/* Insert the old sequence back into the cache. */
 	struct sequence *seq = (struct sequence *)trigger->data;
-	sequence_cache_insert(seq);
-	if (trigger_run(&on_alter_sequence, seq) != 0)
-		return -1;
+	assert(seq->is_tombstone);
+	struct sequence *cached = tx_sequence_by_id(seq->def->id);
+	if (cached != NULL && cached->schema_version == seq->schema_version) {
+		assert(cached == seq);
+		tx_sequence_cache_delete(seq->def->id);
+	}
+	sequence_delete(seq);
 	return 0;
 }
-
 
 static int
 on_alter_sequence_commit(struct trigger *trigger, void * /* event */)
 {
-	/* Delete the old old sequence definition. */
-	struct sequence_def *def = (struct sequence_def *)trigger->data;
-	free(def);
+	/* Delete the old sequence. */
+	struct sequence *seq = (struct sequence *)trigger->data;
+	assert(!seq->is_tombstone);
+	struct sequence *cached = tx_sequence_by_id(seq->def->id);
+	assert(seq->def->id == cached->def->id);
+	if (cached->schema_version == seq->schema_version) {
+		tx_sequence_cache_delete(seq->def->id);
+		assert(cached == seq);
+	}
+	struct sequence *replaced = sequence_by_id(seq->def->id);
+	sequence_cache_delete(seq->def->id);
+	sequence_cache_insert(seq);
+	if (trigger_run(&on_alter_sequence, seq) != 0)
+		return -1;
+	sequence_delete(replaced);
 	return 0;
 }
 
@@ -4578,13 +4625,14 @@ static int
 on_alter_sequence_rollback(struct trigger *trigger, void * /* event */)
 {
 	/* Restore the old sequence definition. */
-	struct sequence_def *def = (struct sequence_def *)trigger->data;
-	struct sequence *seq = sequence_by_id(def->id);
-	assert(seq != NULL);
-	free(seq->def);
-	seq->def = def;
-	if (trigger_run(&on_alter_sequence, seq) != 0)
-		return -1;
+	struct sequence *seq = (struct sequence *)trigger->data;
+	assert(!seq->is_tombstone);
+	struct sequence *cached = tx_sequence_by_id(seq->def->id);
+	if (cached != NULL && cached->schema_version == seq->schema_version) {
+		assert(cached == seq);
+		tx_sequence_cache_delete(seq->def->id);
+	}
+	sequence_delete(seq);
 	return 0;
 }
 
@@ -4616,12 +4664,25 @@ on_replace_dd_sequence(struct trigger * /* trigger */, void *event)
 			txn_alter_trigger_new(on_create_sequence_rollback, NULL);
 		if (on_rollback == NULL)
 			return -1;
+		struct trigger *on_commit =
+			txn_alter_trigger_new(on_create_sequence_commit, NULL);
+		if (on_commit == NULL)
+			return -1;
 		seq = sequence_new(new_def);
 		if (seq == NULL)
 			return -1;
-		sequence_cache_insert(seq);
+		struct sequence *old = tx_sequence_by_id(new_def->id);
+		if (old != NULL) {
+			assert(old->is_tombstone);
+			assert(sequence_by_id(new_def->id) == NULL);
+			/* Delete tombstone inserted by previous DROP */
+			tx_sequence_cache_delete(old->def->id);
+		}
+		tx_sequence_cache_insert(seq);
 		on_rollback->data = seq;
+		on_commit->data = seq;
 		txn_stmt_on_rollback(stmt, on_rollback);
+		txn_stmt_on_commit(stmt, on_commit);
 	} else if (old_tuple != NULL && new_tuple == NULL) {	/* DELETE */
 		uint32_t id;
 		if (tuple_field_u32(old_tuple, BOX_SEQUENCE_DATA_FIELD_ID, &id) != 0)
@@ -4654,13 +4715,22 @@ on_replace_dd_sequence(struct trigger * /* trigger */, void *event)
 				  seq->def->name, "the sequence has grants");
 			return -1;
 		}
+		struct sequence *dup = sequence_dup(seq);
+		if (dup == NULL)
+			return -1;
+		dup->is_tombstone = true;
+		struct sequence *tx_entry = tx_sequence_by_id(id);
+		if (tx_entry != NULL) {
+			assert(!tx_entry->is_tombstone);
+			tx_sequence_cache_delete(id);
+		}
+		tx_sequence_cache_insert(dup);
 		struct trigger *on_commit =
-			txn_alter_trigger_new(on_drop_sequence_commit, seq);
+			txn_alter_trigger_new(on_drop_sequence_commit, dup);
 		struct trigger *on_rollback =
-			txn_alter_trigger_new(on_drop_sequence_rollback, seq);
+			txn_alter_trigger_new(on_drop_sequence_rollback, dup);
 		if (on_commit == NULL || on_rollback == NULL)
 			return -1;
-		sequence_cache_delete(seq->def->id);
 		txn_stmt_on_commit(stmt, on_commit);
 		txn_stmt_on_rollback(stmt, on_rollback);
 	} else {						/* UPDATE */
@@ -4670,23 +4740,31 @@ on_replace_dd_sequence(struct trigger * /* trigger */, void *event)
 			return -1;
 		seq = sequence_by_id(new_def->id);
 		assert(seq != NULL);
+
 		if (access_check_ddl(seq->def->name, seq->def->id, seq->def->uid,
 				 SC_SEQUENCE, PRIV_A) != 0)
 			return -1;
+		struct sequence *new_seq = sequence_new(new_def);
+		if (new_seq == NULL)
+			return -1;
+		struct sequence *tx_entry = tx_sequence_by_id(new_def->id);
+		if (tx_entry != NULL) {
+			assert(!tx_entry->is_tombstone);
+			tx_sequence_cache_delete(new_def->id);
+		}
+		tx_sequence_cache_insert(new_seq);
 		struct trigger *on_commit =
-			txn_alter_trigger_new(on_alter_sequence_commit, seq->def);
+			txn_alter_trigger_new(on_alter_sequence_commit, new_seq);
 		struct trigger *on_rollback =
-			txn_alter_trigger_new(on_alter_sequence_rollback, seq->def);
+			txn_alter_trigger_new(on_alter_sequence_rollback, new_seq);
 		if (on_commit == NULL || on_rollback == NULL)
 			return -1;
-		seq->def = new_def;
 		txn_stmt_on_commit(stmt, on_commit);
 		txn_stmt_on_rollback(stmt, on_rollback);
 	}
 
 	def_guard.is_active = false;
-	if (trigger_run(&on_alter_sequence, seq) != 0)
-		return -1;
+	schema_version++;
 	return 0;
 }
 

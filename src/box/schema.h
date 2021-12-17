@@ -136,6 +136,9 @@ space_is_system(struct space *space);
 struct sequence *
 sequence_by_id(uint32_t id);
 
+struct sequence *
+tx_sequence_by_id(uint32_t id);
+
 /**
  * Find object id by name in specified system space with index.
  *
@@ -210,9 +213,15 @@ sequence_cache_find(uint32_t id);
 void
 sequence_cache_insert(struct sequence *seq);
 
+void
+tx_sequence_cache_insert(struct sequence *seq);
+
 /** Delete a sequence from the sequence cache. */
 void
 sequence_cache_delete(uint32_t id);
+
+void
+tx_sequence_cache_delete(uint32_t id);
 
 #endif /* defined(__cplusplus) */
 

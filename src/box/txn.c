@@ -222,6 +222,7 @@ txn_new(void)
 			stailq_shift_entry(&txn_cache, struct txn, in_txn_cache);
 		assert(mh_size(txn->funcs) == 0);
 		assert(mh_size(txn->funcs_by_name) == 0);
+		assert(mh_size(txn->sequences) == 0);
 		return txn;
 	}
 
@@ -248,6 +249,7 @@ txn_new(void)
 	rlist_create(&txn->in_all_txs);
 	txn->funcs = mh_i32ptr_new();
 	txn->funcs_by_name = mh_strnptr_new();
+	txn->sequences = mh_i32ptr_new();
 	return txn;
 }
 
@@ -291,6 +293,7 @@ txn_free(struct txn *txn)
 
 	assert(mh_size(txn->funcs) == 0);
 	assert(mh_size(txn->funcs_by_name) == 0);
+	assert(mh_size(txn->sequences) == 0);
 
 	/* Truncate region up to struct txn size. */
 	region_truncate(&txn->region, sizeof(struct txn));

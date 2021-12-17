@@ -44,7 +44,6 @@ extern "C" {
 #endif /* defined(__cplusplus) */
 
 struct iterator;
-struct Vdbe;
 
 /** Sequence metadata. */
 struct sequence_def {
@@ -84,6 +83,8 @@ struct sequence {
 	bool is_generated;
 	/** Cached runtime access information. */
 	struct access access[BOX_USER_MAX];
+	bool is_tombstone;
+	uint32_t schema_version;
 };
 
 static inline size_t
@@ -109,6 +110,9 @@ sequence_free(void);
  */
 struct sequence *
 sequence_new(struct sequence_def *def);
+
+struct sequence *
+sequence_dup(struct sequence *sequence);
 
 /**
  * Destroy a sequence and its definition.
