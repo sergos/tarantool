@@ -231,6 +231,7 @@ trace_txn_limbo_lock(const char *prefix, const struct txn_limbo *limbo,
 			break;
 		}
 	}
+	assert(pos > 0);
 	buf[--pos] = '\0';
 	say_info("%s", buf);
 }
@@ -268,6 +269,7 @@ trace_txn_limbo_unlock(const char *prefix, const struct txn_limbo *limbo,
 			break;
 		}
 	}
+	assert(pos > 0);
 	buf[--pos] = '\0';
 	say_info("%s", buf);
 }
