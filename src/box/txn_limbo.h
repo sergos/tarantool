@@ -212,14 +212,12 @@ trace_txn_limbo_lock(const char *prefix, const struct txn_limbo *limbo,
 	char buf[1024];
 
 	pos = snprintf(buf, sizeof(buf),
-		       "%s: %s:%d fiber %s:%lld owner %s:%lld nested %d",
+		       "%s: %s:%d fiber %s:%lld owner %s:%lld nested %d\n",
 		       prefix, caller_func, caller_line, f->name,
 		       (long long)f->fid, owner ? owner->name : "-",
 		       owner ? (long long)owner->fid : (long long)0,
 		       f == owner);
 
-	if (!rlist_empty(&l->queue))
-		buf[pos++] = '\n';
 	assert(pos < (ssize_t)sizeof(buf));
 
 	rlist_foreach_entry(qf, &l->queue, state) {
@@ -251,13 +249,11 @@ trace_txn_limbo_unlock(const char *prefix, const struct txn_limbo *limbo,
 		assert(f == owner);
 
 	pos = snprintf(buf, sizeof(buf),
-		       "%s: %s:%d fiber %s:%lld owner %s:%lld nested %d match %d",
+		       "%s: %s:%d fiber %s:%lld owner %s:%lld nested %d match %d\n",
 		       prefix, caller_func, caller_line, f->name,
 		       (long long)f->fid, owner ? owner->name : "-",
 		       owner ? (long long)owner->fid : (long long)0,
 		       nested, f == owner);
-	if (!rlist_empty(&l->queue))
-		buf[pos++] = '\n';
 	assert(pos < (ssize_t)sizeof(buf));
 
 	rlist_foreach_entry(qf, &l->queue, state) {
