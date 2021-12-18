@@ -137,6 +137,12 @@ latch_lock_timeout(struct latch *l, ev_tstamp timeout)
 			/* Current fiber was woken by previous latch owner. */
 			break;
 		} else if (l->owner == NULL) {
+			/*
+			 * Previous owner has uncloked the latch and
+			 * waiter has been woken up explicitly via
+			 * fiber_wakeup() call, so take the latch
+			 * immediately.
+			 */
 			l->owner = fiber();
 			break;
 		}
