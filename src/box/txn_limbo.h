@@ -208,18 +208,31 @@ trace_txn_limbo_lock(const char *prefix, const struct txn_limbo *limbo,
 	struct latch *l = (struct latch *)&limbo->latch;
 	struct fiber *owner = l->owner;
 	struct fiber *qf;
+	ssize_t pos = 0;
+	char buf[1024];
 
-	say_info("%s: %s:%d fiber %s:%lld owner %s:%lld nested %d",
-		 prefix, caller_func, caller_line, f->name,
-		 (long long)f->fid, owner ? owner->name : "-",
-		 owner ? (long long)owner->fid : (long long)0,
-		 f == owner);
+	pos = snprintf(buf, sizeof(buf),
+		       "%s: %s:%d fiber %s:%lld owner %s:%lld nested %d",
+		       prefix, caller_func, caller_line, f->name,
+		       (long long)f->fid, owner ? owner->name : "-",
+		       owner ? (long long)owner->fid : (long long)0,
+		       f == owner);
+
+	if (!rlist_empty(&l->queue))
+		buf[pos++] = '\n';
+	assert(pos < (ssize_t)sizeof(buf));
 
 	rlist_foreach_entry(qf, &l->queue, state) {
-		say_info("\t queued %s:%lld",
-			 qf->name,
-			 (long long)qf->fid);
+		pos += snprintf(&buf[pos], sizeof(buf) - pos,
+				"\t queued %s:%lld\n", qf->name,
+				(long long)qf->fid);
+		if (pos >= (ssize_t)sizeof(buf)) {
+			pos = (ssize_t)sizeof(buf);
+			break;
+		}
 	}
+	buf[--pos] = '\0';
+	say_info("%s", buf);
 }
 
 static inline void
@@ -230,21 +243,33 @@ trace_txn_limbo_unlock(const char *prefix, const struct txn_limbo *limbo,
 	struct latch *l = (struct latch *)&limbo->latch;
 	struct fiber *owner = l->owner;
 	struct fiber *qf;
+	ssize_t pos = 0;
+	char buf[1024];
 
 	if (nested)
 		assert(f == owner);
 
-	say_info("%s: %s:%d fiber %s:%lld owner %s:%lld nested %d match %d",
-		 prefix, caller_func, caller_line, f->name,
-		 (long long)f->fid, owner ? owner->name : "-",
-		 owner ? (long long)owner->fid : (long long)0,
-		 nested, f == owner);
+	pos = snprintf(buf, sizeof(buf),
+		       "%s: %s:%d fiber %s:%lld owner %s:%lld nested %d match %d",
+		       prefix, caller_func, caller_line, f->name,
+		       (long long)f->fid, owner ? owner->name : "-",
+		       owner ? (long long)owner->fid : (long long)0,
+		       nested, f == owner);
+	if (!rlist_empty(&l->queue))
+		buf[pos++] = '\n';
+	assert(pos < (ssize_t)sizeof(buf));
 
 	rlist_foreach_entry(qf, &l->queue, state) {
-		say_info("\t queued %s:%lld",
-			 qf->name,
-			 (long long)qf->fid);
+		pos += snprintf(&buf[pos], sizeof(buf) - pos,
+				"\t queued %s:%lld\n", qf->name,
+				(long long)qf->fid);
+		if (pos >= (ssize_t)sizeof(buf)) {
+			pos = (ssize_t)sizeof(buf);
+			break;
+		}
 	}
+	buf[--pos] = '\0';
+	say_info("%s", buf);
 }
 
 #else /* !TRACE_TXN_LIMBO_LOCK */
