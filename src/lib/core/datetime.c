@@ -83,7 +83,7 @@ tm_to_datetime(struct tnt_tm *tm, struct datetime *date)
 }
 
 char *
-tnt_datetime_strptime(struct datetime *date, const char *buf, const char *fmt)
+datetime_strptime(struct datetime *date, const char *buf, const char *fmt)
 {
 	struct tnt_tm t = { .tm_epoch = 0 };
 	char * ret = tnt_strptime(buf, fmt, &t);

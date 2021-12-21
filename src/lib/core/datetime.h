@@ -123,7 +123,7 @@ datetime_to_tm(const struct datetime *date, struct tnt_tm *tm);
  * @sa strptime()
  */
 char *
-tnt_datetime_strptime(struct datetime *date, const char *buf, const char *fmt);
+datetime_strptime(struct datetime *date, const char *buf, const char *fmt);
 
 #if defined(__cplusplus)
 } /* extern "C" */
