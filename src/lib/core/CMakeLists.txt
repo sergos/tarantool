@@ -16,6 +16,7 @@ set(core_sources
     coio.c
     coio_task.c
     coio_file.c
+    mutex.c
     popen.c
     fio.c
     exception.cc

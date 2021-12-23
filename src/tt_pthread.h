@@ -90,11 +90,6 @@
 })
 #endif
 
-#define tt_pthread_mutex_destroy(mutex)		\
-({	int e__ = pthread_mutex_destroy(mutex);	\
-	tt_pthread_error(e__);			\
-})
-
 #define tt_pthread_mutex_lock(mutex)		\
 ({	int e__ = pthread_mutex_lock(mutex);	\
 	say_debug("%s: locking %s", __func__, #mutex);\

@@ -460,7 +460,7 @@ lbox_fillspace(struct lua_State *L, struct space *space, int i)
 }
 
 /** Export a space to Lua */
-static void
+void
 box_lua_space_new(struct lua_State *L, struct space *space)
 {
 	lua_getfield(L, LUA_GLOBALSINDEX, "box");

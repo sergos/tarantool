@@ -1,7 +1,6 @@
-#ifndef INCLUDES_TARANTOOL_LUA_SPACE_H
-#define INCLUDES_TARANTOOL_LUA_SPACE_H
+#pragma once
 /*
- * Copyright 2010-2016, Tarantool AUTHORS, please see AUTHORS file.
+ * Copyright 2010-2021, Tarantool AUTHORS, please see AUTHORS file.
  *
  * Redistribution and use in source and binary forms, with or
  * without modification, are permitted provided that the following
@@ -30,22 +29,64 @@
  * THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
-#include <stdint.h>
+#include <assert.h>
+#include "fiber.h"
+#include "tt_pthread.h"
+
 
 #if defined(__cplusplus)
 extern "C" {
 #endif /* defined(__cplusplus) */
 
-struct lua_State;
+enum {
+	BOX_MUTEX_DEFAULT_TIMEOUT = 1
+};
 
-void
-box_lua_space_init(struct lua_State *L);
+struct box_mutex {
+	pthread_mutex_t mutex;
+};
 
-void
-box_lua_space_new(struct lua_State *L, struct space *space);
+extern struct box_mutex *box_mutex;
+
+static inline void
+box_mutex_create()
+{
+	assert(box_mutex == NULL && "box mutex has been already created!");
+	box_mutex = (struct box_mutex *) malloc(sizeof(*box_mutex));
+	if (box_mutex == NULL)
+		panic("Failed to allocate box mutex!");
+	(void) tt_pthread_mutex_init(&box_mutex->mutex, NULL);
+}
+
+/** TODO: add queue of threads to acquire the lock. */
+static inline int
+box_mutex_lock()
+{
+	int err = 0;
+	while ((err = tt_pthread_mutex_trylock(&box_mutex->mutex)) != 0) {
+		if (err != EBUSY)
+			return -1;
+		fiber_sleep(0.5);
+		say_error("Failed to lock mutex, yield!");
+	}
+	return 0;
+}
+
+static inline void
+box_mutex_unlock()
+{
+	(void) tt_pthread_mutex_unlock(&box_mutex->mutex);
+
+}
+
+static inline void
+box_mutex_destroy()
+{
+	(void) tt_pthread_mutex_lock(&box_mutex->mutex);
+	(void) tt_pthread_mutex_unlock(&box_mutex->mutex);
+	(void) tt_pthread_mutex_destroy(&box_mutex->mutex);
+}
 
 #if defined(__cplusplus)
 } /* extern "C" */
 #endif /* defined(__cplusplus) */
-
-#endif /* INCLUDES_TARANTOOL_LUA_SPACE_H */

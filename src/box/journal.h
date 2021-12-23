@@ -277,6 +277,7 @@ journal_write(struct journal_entry *entry)
 static inline int
 journal_write_try_async(struct journal_entry *entry)
 {
+	say_error("try async %s", cord()->name);
 	journal_queue_wait();
 	journal_queue_on_append(entry);
 

@@ -83,6 +83,7 @@
 #include "core/crash.h"
 #include "ssl_cert_paths_discover.h"
 #include "core/errinj.h"
+#include "box/thread.h"
 
 static pid_t master_pid = getpid();
 static struct pidfh *pid_file_handle;
@@ -518,6 +519,7 @@ tarantool_free(void)
 	coio_shutdown();
 
 	box_free();
+	box_destroy_thread_pool();
 
 	title_free(main_argc, main_argv);
 

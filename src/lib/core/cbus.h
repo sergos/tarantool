@@ -142,6 +142,33 @@ struct cpipe {
 	struct rlist on_flush;
 };
 
+
+/**
+ * cbus endpoint
+ */
+struct cbus_endpoint {
+	/**
+	 * Endpoint name, used to identify the endpoint when
+	 * establishing a route.
+	 */
+	char name[FIBER_NAME_MAX];
+	/** Member of cbus->endpoints */
+	struct rlist in_cbus;
+	/** The lock around the pipe. */
+	pthread_mutex_t mutex;
+	/** A queue with incoming messages. */
+	struct stailq output;
+	/** Consumer cord loop */
+	ev_loop *consumer;
+	/** Async to notify the consumer */
+	ev_async async;
+	/** Count of connected pipes */
+	uint32_t n_pipes;
+	/** Condition for endpoint destroy */
+	struct fiber_cond cond;
+};
+
+
 /**
  * Initialize a pipe and connect it to the consumer.
  * Must be called by the producer. The call returns
@@ -190,6 +217,7 @@ cpipe_deliver_now(struct cpipe *pipe)
 static inline void
 cpipe_flush_input(struct cpipe *pipe)
 {
+	//say_error("flush_input loop cord %s pipe endpoint %s", cord()->name, pipe->endpoint->name);
 	assert(loop() == pipe->producer);
 
 	/** Flush may be called with no input. */
@@ -221,6 +249,7 @@ cpipe_flush_input(struct cpipe *pipe)
 static inline void
 cpipe_push_input(struct cpipe *pipe, struct cmsg *msg)
 {
+	//say_error("push_input loop cord %s pipe endpoint %s", cord()->name, pipe->endpoint->name);
 	assert(loop() == pipe->producer);
 
 	stailq_add_tail_entry(&pipe->input, msg, fifo);
@@ -243,31 +272,6 @@ cpipe_push(struct cpipe *pipe, struct cmsg *msg)
 	if (pipe->n_input == 1)
 		ev_feed_event(pipe->producer, &pipe->flush_input, EV_CUSTOM);
 }
-
-/**
- * cbus endpoint
- */
-struct cbus_endpoint {
-	/**
-	 * Endpoint name, used to identify the endpoint when
-	 * establishing a route.
-	 */
-	char name[FIBER_NAME_MAX];
-	/** Member of cbus->endpoints */
-	struct rlist in_cbus;
-	/** The lock around the pipe. */
-	pthread_mutex_t mutex;
-	/** A queue with incoming messages. */
-	struct stailq output;
-	/** Consumer cord loop */
-	ev_loop *consumer;
-	/** Async to notify the consumer */
-	ev_async async;
-	/** Count of connected pipes */
-	uint32_t n_pipes;
-	/** Condition for endpoint destroy */
-	struct fiber_cond cond;
-};
 
 /**
  * Fetch incomming messages to output

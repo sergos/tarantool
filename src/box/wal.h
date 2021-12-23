@@ -76,6 +76,8 @@ extern const char *wal_mode_STRS[];
 
 extern int wal_dir_lock;
 
+extern bool is_thread_inited;
+
 #if defined(__cplusplus)
 extern "C" {
 #endif /* defined(__cplusplus) */
@@ -123,6 +125,12 @@ wal_free(void);
  */
 const char *
 wal_dir(void);
+
+void
+wal_write_to_disk(struct cmsg *msg);
+
+void
+tx_complete_batch(struct cmsg *msg);
 
 struct wal_watcher_msg {
 	struct cmsg cmsg;

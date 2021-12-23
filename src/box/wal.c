@@ -42,6 +42,7 @@
 #include "cbus.h"
 #include "coio_task.h"
 #include "replication.h"
+#include "thread.h"
 
 enum {
 	/**
@@ -62,6 +63,8 @@ const char *wal_mode_STRS[WAL_MODE_MAX] = {
 };
 
 int wal_dir_lock = -1;
+
+bool is_thread_inited= true;
 
 static int
 wal_write_async(struct journal *, struct journal_entry *);
@@ -210,10 +213,10 @@ wal_dir(void)
 	return wal_writer_singleton.wal_dir.dirname;
 }
 
-static void
+void
 wal_write_to_disk(struct cmsg *msg);
 
-static void
+void
 tx_complete_batch(struct cmsg *msg);
 
 static struct cmsg_hop wal_request_route[] = {
@@ -224,7 +227,10 @@ static struct cmsg_hop wal_request_route[] = {
 static void
 wal_msg_create(struct wal_msg *batch)
 {
-	cmsg_init(&batch->base, wal_request_route);
+	if (! cord_is_main())
+		cmsg_init(&batch->base, box_thread_get_wal_route());
+	else
+		cmsg_init(&batch->base, wal_request_route);
 	batch->approx_len = 0;
 	stailq_create(&batch->commit);
 	stailq_create(&batch->rollback);
@@ -234,7 +240,8 @@ wal_msg_create(struct wal_msg *batch)
 static struct wal_msg *
 wal_msg(struct cmsg *msg)
 {
-	return msg->route == wal_request_route ? (struct wal_msg *) msg : NULL;
+	return (msg->route != NULL && msg->route[0].f == wal_write_to_disk) ?
+	       (struct wal_msg *) msg : NULL;
 }
 
 /** Write a request to a log in a single transaction. */
@@ -324,6 +331,12 @@ wal_complete_rollback(struct cmsg *base)
 	wal_writer_singleton.is_in_rollback = false;
 }
 
+static struct cpipe *
+get_wal_pipe(struct wal_writer *writer)
+{
+	return cord_is_main() ? &writer->wal_pipe : box_thread_get_wal_pipe();
+}
+
 static void
 tx_complete_rollback(void)
 {
@@ -346,7 +359,8 @@ tx_complete_rollback(void)
 	};
 	static struct cmsg msg;
 	cmsg_init(&msg, route);
-	cpipe_push(&writer->wal_pipe, &msg);
+
+	cpipe_push(get_wal_pipe(writer), &msg);
 }
 
 /**
@@ -357,7 +371,7 @@ tx_complete_rollback(void)
  * contains the last transaction to rollback, the rollback is
  * performed and normal processing is allowed again.
  */
-static void
+void
 tx_complete_batch(struct cmsg *msg)
 {
 	struct wal_writer *writer = &wal_writer_singleton;
@@ -1031,7 +1045,7 @@ wal_assign_lsn(struct vclock *vclock_diff, struct vclock *base,
 		(*row)->tsn = tsn;
 }
 
-static void
+void
 wal_write_to_disk(struct cmsg *msg)
 {
 	struct wal_writer *writer = &wal_writer_singleton;
@@ -1155,6 +1169,7 @@ wal_write_to_disk(struct cmsg *msg)
 done:
 	error = diag_last_error(diag_get());
 	if (error) {
+		assert(0);
 		/* Until we can pass the error to tx, log it and clear. */
 		error_log(error);
 		diag_clear(diag_get());
@@ -1209,6 +1224,7 @@ wal_writer_f(va_list ap)
 	 * even when tx fiber pool is used up by net messages.
 	 */
 	cpipe_create(&writer->tx_prio_pipe, "tx_prio");
+	box_thread_init_box_pipes();
 
 	cbus_loop(&endpoint);
 
@@ -1236,6 +1252,7 @@ wal_writer_f(va_list ap)
 		xlog_close(&vy_log_writer.xlog, false);
 
 	cpipe_destroy(&writer->tx_prio_pipe);
+	box_thread_destroy_box_pipes();
 	return 0;
 }
 
@@ -1269,8 +1286,11 @@ wal_write_async(struct journal *journal, struct journal_entry *entry)
 	}
 
 	struct wal_msg *batch;
-	if (!stailq_empty(&writer->wal_pipe.input) &&
-	    (batch = wal_msg(stailq_first_entry(&writer->wal_pipe.input,
+	struct cpipe *pipe = get_wal_pipe(writer);
+	assert(pipe != NULL);
+
+	if (!stailq_empty(&pipe->input) &&
+	    (batch = wal_msg(stailq_first_entry(&pipe->input,
 						struct cmsg, fifo)))) {
 
 		stailq_add_tail_entry(&batch->commit, entry, fifo);
@@ -1288,7 +1308,7 @@ wal_write_async(struct journal *journal, struct journal_entry *entry)
 		 * thread right away.
 		 */
 		stailq_add_tail_entry(&batch->commit, entry, fifo);
-		cpipe_push(&writer->wal_pipe, &batch->base);
+		cpipe_push(pipe, &batch->base);
 	}
 	/*
 	 * Remember last entry sent to WAL. In case of rollback
@@ -1297,11 +1317,11 @@ wal_write_async(struct journal *journal, struct journal_entry *entry)
 	 */
 	writer->last_entry = entry;
 	batch->approx_len += entry->approx_len;
-	writer->wal_pipe.n_input += entry->n_rows * XROW_IOVMAX;
+	pipe->n_input += entry->n_rows * XROW_IOVMAX;
 #ifndef NDEBUG
 	++errinj(ERRINJ_WAL_WRITE_COUNT, ERRINJ_INT)->iparam;
 #endif
-	cpipe_flush_input(&writer->wal_pipe);
+	cpipe_flush_input(pipe);
 	return 0;
 
 fail:

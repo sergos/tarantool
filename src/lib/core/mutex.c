@@ -1,7 +1,5 @@
-#ifndef INCLUDES_TARANTOOL_LUA_SPACE_H
-#define INCLUDES_TARANTOOL_LUA_SPACE_H
 /*
- * Copyright 2010-2016, Tarantool AUTHORS, please see AUTHORS file.
+ * Copyright 2010-2021, Tarantool AUTHORS, please see AUTHORS file.
  *
  * Redistribution and use in source and binary forms, with or
  * without modification, are permitted provided that the following
@@ -30,22 +28,6 @@
  * THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
-#include <stdint.h>
+#include "mutex.h"
 
-#if defined(__cplusplus)
-extern "C" {
-#endif /* defined(__cplusplus) */
-
-struct lua_State;
-
-void
-box_lua_space_init(struct lua_State *L);
-
-void
-box_lua_space_new(struct lua_State *L, struct space *space);
-
-#if defined(__cplusplus)
-} /* extern "C" */
-#endif /* defined(__cplusplus) */
-
-#endif /* INCLUDES_TARANTOOL_LUA_SPACE_H */
+struct box_mutex *box_mutex = NULL;

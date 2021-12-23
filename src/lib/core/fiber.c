@@ -681,12 +681,12 @@ fiber_yield(void)
 	caller->caller = &cord->sched;
 
 	/** By convention, these triggers must not throw. */
-	if (! rlist_empty(&caller->on_yield))
+	if (! rlist_empty(&caller->on_yield)) {
 		trigger_run(&caller->on_yield, NULL);
+	}
 
 	if (cord_is_main())
 		cord_on_yield();
-
 	clock_set_on_csw(caller);
 
 	assert(callee->flags & FIBER_IS_READY || callee == &cord->sched);
@@ -913,7 +913,6 @@ fiber_loop(MAYBE_UNUSED void *data)
 	ASAN_FINISH_SWITCH_FIBER(NULL);
 	for (;;) {
 		struct fiber *fiber = fiber();
-
 		assert(fiber != NULL && fiber->f != NULL && fiber->fid != 0);
 		fiber->f_ret = fiber_invoke(fiber->f, fiber->f_data);
 		if (fiber->f_ret != 0) {
@@ -1268,7 +1267,6 @@ fiber_new_ex(const char *name, const struct fiber_attr *fiber_attr,
 
 	cord->next_fid++;
 	assert(cord->next_fid > FIBER_ID_MAX_RESERVED);
-
 	return fiber;
 
 }

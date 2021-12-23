@@ -85,6 +85,8 @@
 #include "audit.h"
 #include "trivia/util.h"
 #include "version.h"
+#include "thread.h"
+#include "../lib/core/mutex.h"
 
 static char status[64] = "unknown";
 
@@ -1283,6 +1285,8 @@ box_check_config(void)
 int
 box_set_election_mode(void)
 {
+	if (box_thread_check_main() != 0)
+		return -1;
 	enum election_mode mode = box_check_election_mode();
 	if (mode == ELECTION_MODE_INVALID)
 		return -1;
@@ -1295,6 +1299,8 @@ box_set_election_mode(void)
 int
 box_set_election_timeout(void)
 {
+	if (box_thread_check_main() != 0)
+		return -1;
 	double d = box_check_election_timeout();
 	if (d < 0)
 		return -1;
@@ -1419,6 +1425,8 @@ box_set_replication_connect_quorum(void)
 void
 box_set_replication_sync_lag(void)
 {
+	if (box_thread_check_main() != 0)
+		diag_raise();
 	replication_sync_lag = box_check_replication_sync_lag();
 }
 
@@ -2291,6 +2299,7 @@ box_index_id_by_name(uint32_t space_id, const char *name, uint32_t len)
 int
 box_process1(struct request *request, box_tuple_t **result)
 {
+	say_error("Called box_process1 from thread %s", cord()->name);
 	/* Allow to write to temporary spaces in read-only mode. */
 	struct space *space = space_cache_find(request->space_id);
 	if (space == NULL)
@@ -2316,8 +2325,15 @@ box_process1(struct request *request, box_tuple_t **result)
 			return -1;
 		}
 	}
-
-	return box_process_rw(request, space, result);
+	if (box_mutex_lock() != 0) {
+		diag_set(ClientError, ER_BOX_THREAD, "Failed to lock mutex!");
+		diag_log();
+		return -1;
+	}
+	int rc = box_process_rw(request, space, result);
+	box_mutex_unlock();
+	say_error("Finished box_process1 from thread %s", cord()->name);
+	return rc;
 }
 
 API_EXPORT int
@@ -2333,6 +2349,12 @@ box_select(uint32_t space_id, uint32_t index_id,
 	if (iterator < 0 || iterator >= iterator_type_MAX) {
 		diag_set(ClientError, ER_ILLEGAL_PARAMS,
 			 "Invalid iterator type");
+		diag_log();
+		return -1;
+	}
+
+	if (box_mutex_lock() != 0) {
+		diag_set(ClientError, ER_BOX_THREAD, "Failed to lock box mutex!");
 		diag_log();
 		return -1;
 	}
@@ -2358,13 +2380,16 @@ box_select(uint32_t space_id, uint32_t index_id,
 
 	struct txn *txn;
 	struct txn_ro_savepoint svp;
-	if (txn_begin_ro_stmt(space, &txn, &svp) != 0)
+	if (txn_begin_ro_stmt(space, &txn, &svp) != 0) {
+		box_mutex_unlock();
 		return -1;
+	}
 
 	struct iterator *it = index_create_iterator(index, type,
 						    key, part_count);
 	if (it == NULL) {
 		txn_rollback_stmt(txn);
+		box_mutex_unlock();
 		return -1;
 	}
 
@@ -2390,8 +2415,10 @@ box_select(uint32_t space_id, uint32_t index_id,
 	if (rc != 0) {
 		port_destroy(port);
 		txn_rollback_stmt(txn);
+		box_mutex_unlock();
 		return -1;
 	}
+	box_mutex_unlock();
 	txn_commit_ro_stmt(txn, &svp);
 	return 0;
 }
@@ -3177,6 +3204,7 @@ box_free(void)
 		wal_free();
 		audit_log_free();
 		sql_built_in_functions_cache_free();
+		box_mutex_destroy();
 	}
 }
 
@@ -3603,6 +3631,7 @@ box_init(void)
 	sequence_init();
 	box_raft_init();
 	box_watcher_init();
+	box_mutex_create();
 }
 
 bool
@@ -3639,6 +3668,7 @@ box_cfg_xc(void)
 		     on_wal_checkpoint_threshold) != 0) {
 		diag_raise();
 	}
+
 
 	title("loading");
 
@@ -3840,7 +3870,8 @@ box_checkpoint(void)
 	/* Signal arrived before box.cfg{} */
 	if (! is_box_configured)
 		return 0;
-
+	if (box_thread_check_main())
+		return -1;
 	return gc_checkpoint();
 }
 
@@ -3852,6 +3883,8 @@ box_backup_start(int checkpoint_idx, box_backup_cb cb, void *cb_arg)
 		diag_set(ClientError, ER_BACKUP_IN_PROGRESS);
 		return -1;
 	}
+	if (box_thread_check_main())
+		return -1;
 	struct gc_checkpoint *checkpoint;
 	gc_foreach_checkpoint_reverse(checkpoint) {
 		if (checkpoint_idx-- == 0)

@@ -39,6 +39,7 @@
 #include "errinj.h"
 #include "iproto_constants.h"
 #include "box.h"
+#include <mutex.h>
 
 double too_long_threshold;
 
@@ -613,10 +614,11 @@ txn_on_journal_write(struct journal_entry *entry)
 	}
 	if (txn_has_flag(txn, TXN_HAS_TRIGGERS))
 		txn_run_wal_write_triggers(txn);
-	if (!txn_has_flag(txn, TXN_WAIT_SYNC))
+	if (!txn_has_flag(txn, TXN_WAIT_SYNC)) {
 		txn_complete_success(txn);
-	else if (txn->fiber != NULL)
+	} else if (txn->fiber != NULL) {
 		fiber_wakeup(txn->fiber);
+	}
 finish:
 	fiber_set_txn(fiber(), NULL);
 }
@@ -917,11 +919,17 @@ txn_commit(struct txn *txn)
 	struct txn_limbo_entry *limbo_entry = NULL;
 
 	txn->fiber = fiber();
+//	if (box_mutex_lock() != 0) {
+//		diag_set(ClientError, ER_BOX_THREAD, "Failed to lock mutex!");
+//		diag_log();
+//		return -1;
+//	}
 
 	if (txn_prepare(txn) != 0)
 		goto rollback_abort;
 
 	if (txn_commit_nop(txn)) {
+		//box_mutex_unlock();
 		txn_free(txn);
 		return 0;
 	}
@@ -979,6 +987,7 @@ txn_commit(struct txn *txn)
 	assert(txn_has_flag(txn, TXN_IS_DONE));
 	assert(txn->signature >= 0);
 
+	//box_mutex_unlock();
 	/* Synchronous transactions are freed by the calling fiber. */
 	txn_free(txn);
 	return 0;
@@ -998,6 +1007,7 @@ rollback:
 	} else {
 		assert(in_txn() == NULL);
 	}
+	//box_mutex_unlock();
 	txn_free(txn);
 	return -1;
 }
@@ -1014,6 +1024,7 @@ txn_rollback_stmt(struct txn *txn)
 void
 txn_rollback(struct txn *txn)
 {
+
 	assert(txn == in_txn());
 	assert(txn->signature != TXN_SIGNATURE_UNKNOWN);
 	txn->status = TXN_ABORTED;

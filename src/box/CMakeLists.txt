@@ -195,6 +195,7 @@ set(box_sources
     merger.c
     ibuf.c
     watcher.c
+    thread.c
     ${sql_sources}
     ${lua_sources}
     lua/init.c
@@ -220,6 +221,7 @@ set(box_sources
     lua/key_def.c
     lua/merger.c
     lua/watcher.c
+    lua/thread.c
     ${bin_sources})
 
 if(ENABLE_AUDIT_LOG)
