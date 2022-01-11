@@ -157,6 +157,9 @@ mem_snprintf(char *buf, uint32_t size, const struct Mem *mem)
 	case MEM_TYPE_BOOL:
 		res = snprintf(buf, size, mem->u.b ? "TRUE" : "FALSE");
 		break;
+	case MEM_TYPE_DATETIME:
+		res = datetime_to_string(&mem->u.date, buf, size);
+		break;
 	default:
 		unreachable();
 	}
@@ -230,6 +233,8 @@ mem_type_class_to_str(const struct Mem *mem)
 		return "array";
 	case MEM_TYPE_MAP:
 		return "map";
+	case MEM_TYPE_DATETIME:
+		return "datetime";
 	default:
 		break;
 	}
@@ -1223,6 +1228,15 @@ uuid_to_bin(struct Mem *mem)
 	return mem_copy_bin(mem, (char *)&mem->u.uuid, UUID_LEN);
 }
 
+
+static inline int
+datetime_to_str0(struct Mem *mem)
+{
+	assert(mem->type == MEM_TYPE_DATETIME);
+	char buf[DT_TO_STRING_BUFSIZE];
+	return datetime_to_string(&mem->u.date, buf, DT_TO_STRING_BUFSIZE);
+}
+
 int
 mem_to_int(struct Mem *mem)
 {
@@ -1312,6 +1326,8 @@ mem_to_str(struct Mem *mem)
 		return uuid_to_str0(mem);
 	case MEM_TYPE_DEC:
 		return dec_to_str0(mem);
+	case MEM_TYPE_DATETIME:
+		return datetime_to_str0(mem);
 	default:
 		return -1;
 	}
@@ -1400,6 +1416,11 @@ mem_cast_explicit(struct Mem *mem, enum field_type type)
 		if (mem->type != MEM_TYPE_MAP)
 			return -1;
 		mem->flags &= ~MEM_Any;
+		return 0;
+	case FIELD_TYPE_DATETIME:
+		if (mem->type != MEM_TYPE_DATETIME)
+			return -1;
+		mem->flags = 0;
 		return 0;
 	case FIELD_TYPE_SCALAR:
 		if ((mem->type & (MEM_TYPE_MAP | MEM_TYPE_ARRAY)) != 0)
@@ -1523,6 +1544,11 @@ mem_cast_implicit(struct Mem *mem, enum field_type type)
 		return 0;
 	case FIELD_TYPE_UUID:
 		if (mem->type != MEM_TYPE_UUID)
+			return -1;
+		mem->flags = 0;
+		return 0;
+	case FIELD_TYPE_DATETIME:
+		if (mem->type != MEM_TYPE_DATETIME)
 			return -1;
 		mem->flags = 0;
 		return 0;
@@ -2956,6 +2982,9 @@ mem_to_mpstream(const struct Mem *var, struct mpstream *stream)
 	case MEM_TYPE_DEC:
 		mpstream_encode_decimal(stream, &var->u.d);
 		return;
+	case MEM_TYPE_DATETIME:
+		mpstream_encode_datetime(stream, &var->u.date);
+		return;
 	default:
 		unreachable();
 	}
@@ -3052,6 +3081,9 @@ port_vdbemem_dump_lua(struct port *base, struct lua_State *L, bool is_flat)
 			break;
 		case MEM_TYPE_DEC:
 			*lua_pushdecimal(L) = mem->u.d;
+			break;
+		case MEM_TYPE_DATETIME:
+			*luaT_pushdatetime(L) = mem->u.date;
 			break;
 		default:
 			unreachable();
