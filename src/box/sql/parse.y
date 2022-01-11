@@ -233,7 +233,7 @@ columnlist ::= column_def create_column_end.
 
 column_def ::= column_name_and_type carglist.
 
-column_name_and_type ::= nm(A) typedef(Y). {
+column_name_and_type ::= nm(A) persistent_type(Y). {
   create_column_def_init(&pParse->create_column_def, NULL, &A, &Y);
   sql_create_column_start(pParse);
 }
@@ -1781,7 +1781,7 @@ column_name(N) ::= nm(A). { N = A; }
 
 cmd ::= alter_column_def carglist create_column_end.
 
-alter_column_def ::= alter_add_column(N) typedef(Y). {
+alter_column_def ::= alter_add_column(N) persistent_type(Y). {
   create_column_def_init(&pParse->create_column_def, N.table_name, &N.name, &Y);
   create_ck_constraint_parse_def_init(&pParse->create_ck_constraint_parse_def);
   create_fk_constraint_parse_def_init(&pParse->create_fk_constraint_parse_def);
@@ -1846,18 +1846,19 @@ wqlist(A) ::= wqlist(A) COMMA nm(X) eidlist_opt(Y) AS LP select(Z) RP. {
 }
 
 ////////////////////////////// TYPE DECLARATION ///////////////////////////////
-%type typedef {struct type_def}
-typedef(A) ::= TEXT . { A.type = FIELD_TYPE_STRING; }
-typedef(A) ::= STRING_KW . { A.type = FIELD_TYPE_STRING; }
-typedef(A) ::= SCALAR . { A.type = FIELD_TYPE_SCALAR; }
+%type persistent_type {struct type_def}
+%type nonpersistent_type {struct type_def}
+persistent_type(A) ::= TEXT . { A.type = FIELD_TYPE_STRING; }
+persistent_type(A) ::= STRING_KW . { A.type = FIELD_TYPE_STRING; }
+persistent_type(A) ::= SCALAR . { A.type = FIELD_TYPE_SCALAR; }
 /** BOOL | BOOLEAN is not used due to possible bug in Lemon. */
-typedef(A) ::= BOOL . { A.type = FIELD_TYPE_BOOLEAN; }
-typedef(A) ::= BOOLEAN . { A.type = FIELD_TYPE_BOOLEAN; }
-typedef(A) ::= VARBINARY . { A.type = FIELD_TYPE_VARBINARY; }
-typedef(A) ::= UUID . { A.type = FIELD_TYPE_UUID; }
-typedef(A) ::= ANY . { A.type = FIELD_TYPE_ANY; }
-typedef(A) ::= ARRAY . { A.type = FIELD_TYPE_ARRAY; }
-typedef(A) ::= MAP . { A.type = FIELD_TYPE_MAP; }
+persistent_type(A) ::= BOOL . { A.type = FIELD_TYPE_BOOLEAN; }
+persistent_type(A) ::= BOOLEAN . { A.type = FIELD_TYPE_BOOLEAN; }
+persistent_type(A) ::= VARBINARY . { A.type = FIELD_TYPE_VARBINARY; }
+persistent_type(A) ::= UUID . { A.type = FIELD_TYPE_UUID; }
+persistent_type(A) ::= ANY . { A.type = FIELD_TYPE_ANY; }
+persistent_type(A) ::= ARRAY . { A.type = FIELD_TYPE_ARRAY; }
+persistent_type(A) ::= MAP . { A.type = FIELD_TYPE_MAP; }
 
 /// DATE/TIME/TIMESTAMP/INTERVAL
 
@@ -1866,28 +1867,31 @@ opt_timezone(A) ::= WITH TIME ZONE .    { A = true; }
 opt_timezone(A) ::= WITHOUT TIME ZONE . { A = false; }
 opt_timezone(A) ::= .                   { A = false; }
 
-%type date_typedef {struct type_def}
-typedef(A) ::= date_typedef(A) .
+%type persistent_date_type {struct type_def}
+persistent_type(A) ::= persistent_date_type(A) .
 
-date_typedef(A) ::= TIMESTAMP ignored_len(B) opt_timezone(C) . {
+persistent_date_type(A) ::= TIMESTAMP ignored_len(B) opt_timezone(C) . {
     (void) B; (void) C;
     A.type = FIELD_TYPE_DATETIME;
 }
-date_typedef(A) ::= TIMESTAMP opt_timezone(C) . {
+persistent_date_type(A) ::= TIMESTAMP opt_timezone(C) . {
     (void) C;
     A.type = FIELD_TYPE_DATETIME;
 }
-date_typedef(A) ::= TIME ignored_len(B) opt_timezone(C) . {
+persistent_date_type(A) ::= DATE . { A.type = FIELD_TYPE_DATETIME; }
+
+%type nonpersistent_date_type {struct type_def}
+nonpersistent_date_type(A) ::= TIME ignored_len(B) opt_timezone(C) . {
     (void) B; (void) C;
     A.type = FIELD_TYPE_DATETIME;
 }
-date_typedef(A) ::= TIME opt_timezone(C) . {
+
+nonpersistent_date_type(A) ::= TIME opt_timezone(C) . {
     (void) C;
     A.type = FIELD_TYPE_DATETIME;
 }
-date_typedef(A) ::= DATE . { A.type = FIELD_TYPE_DATETIME; }
 
-date_typedef(A) ::= INTERVAL opt_interval(B) . {
+nonpersistent_date_type(A) ::= INTERVAL opt_interval(B) . {
     (void) B;
     A.type = FIELD_TYPE_DATETIME;
 }
@@ -1920,19 +1924,23 @@ ignored_len(A) ::= LP INTEGER(B) RP . {
 }
 
 %type ignored_len {int}
-typedef(A) ::= VARCHAR ignored_len(B) . {
+persistent_type(A) ::= VARCHAR ignored_len(B) . {
   A.type = FIELD_TYPE_STRING;
   (void) B;
 }
 
 /// NUMBER/DOUBLE/INTEGER/UNSIGNED
 %type number_typedef {struct type_def}
-typedef(A) ::= number_typedef(A) .
+persistent_type(A) ::= number_typedef(A) .
 number_typedef(A) ::= NUMBER . { A.type = FIELD_TYPE_NUMBER; }
 number_typedef(A) ::= DOUBLE . { A.type = FIELD_TYPE_DOUBLE; }
 number_typedef(A) ::= INT|INTEGER_KW . { A.type = FIELD_TYPE_INTEGER; }
 number_typedef(A) ::= UNSIGNED . { A.type = FIELD_TYPE_UNSIGNED; }
 number_typedef(A) ::= DECIMAL . { A.type = FIELD_TYPE_DECIMAL; }
+
+%type typedef {struct type_def}
+typedef(A) ::= persistent_type(A) .
+typedef(A) ::= nonpersistent_date_type(A) .
 
 /**
  * NUMERIC type is temporary disabled. To be enabled when
