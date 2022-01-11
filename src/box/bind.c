@@ -34,6 +34,8 @@
 #include "sql/sqlInt.h"
 #include "sql/sqlLimit.h"
 #include "sql/vdbe.h"
+#include "mp_decimal.h"
+#include "mp_uuid.h"
 
 const char *
 sql_bind_name(const struct sql_bind *bind)
@@ -99,9 +101,35 @@ sql_bind_decode(struct sql_bind *bind, int i, const char **packet)
 	case MP_BIN:
 		bind->s = mp_decode_bin(packet, &bind->bytes);
 		break;
+	case MP_EXT: {
+		int8_t ext_type;
+		const char *svp = *packet;
+		uint32_t size = mp_decode_extl(packet, &ext_type);
+		if (ext_type != MP_UUID && ext_type != MP_DECIMAL) {
+			bind->s = svp;
+			*packet += size;
+			bind->bytes = *packet - svp;
+			break;
+		}
+		*packet = svp;
+		if (ext_type == MP_UUID) {
+			if (mp_decode_uuid(packet, &bind->uuid) == NULL) {
+				diag_set(ClientError, ER_INVALID_MSGPACK,
+					 "Invalid MP_UUID MsgPack format");
+				return -1;
+			}
+		} else {
+			if (mp_decode_decimal(packet, &bind->dec) == NULL) {
+				diag_set(ClientError, ER_INVALID_MSGPACK,
+					 "Invalid MP_DECIMAL MsgPack format");
+				return -1;
+			}
+		}
+		bind->ext_type = ext_type;
+		break;
+	}
 	case MP_ARRAY:
 	case MP_MAP:
-	case MP_EXT:
 		bind->s = *packet;
 		mp_next(packet);
 		bind->bytes = *packet - bind->s;
