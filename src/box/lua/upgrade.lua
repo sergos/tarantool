@@ -1213,6 +1213,21 @@ local function upgrade_to_2_9_1()
 end
 
 --------------------------------------------------------------------------------
+-- Tarantool 2.10.1
+--------------------------------------------------------------------------------
+local function change_func_body_field_type()
+    local _func = box.space._func
+    local format = _func:format()
+    -- Change type of 'body' field from 'string' to 'any'.
+    format[6].type = 'any'
+    _func:format(format)
+end
+
+local function upgrade_to_2_10_1()
+    change_func_body_field_type()
+end
+
+--------------------------------------------------------------------------------
 
 local handlers = {
     {version = mkversion(1, 7, 5), func = upgrade_to_1_7_5, auto=true},
@@ -1229,6 +1244,7 @@ local handlers = {
     {version = mkversion(2, 3, 1), func = upgrade_to_2_3_1, auto = true},
     {version = mkversion(2, 7, 1), func = upgrade_to_2_7_1, auto = true},
     {version = mkversion(2, 9, 1), func = upgrade_to_2_9_1, auto = true},
+    {version = mkversion(2, 10, 1), func = upgrade_to_2_10_1, auto = true},
 }
 
 -- Schema version of the snapshot.

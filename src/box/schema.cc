@@ -60,6 +60,7 @@ static struct mh_i32ptr_t *spaces;
 static struct mh_strnptr_t *spaces_by_name;
 static struct mh_i32ptr_t *funcs;
 static struct mh_strnptr_t *funcs_by_name;
+static struct mh_i32ptr_t *funcs_fin;
 static struct mh_i32ptr_t *sequences;
 /** Public change counter. On its update clients need to fetch
  *  new space data from the instance. */
@@ -379,6 +380,7 @@ schema_init(void)
 	spaces_by_name = mh_strnptr_new();
 	funcs = mh_i32ptr_new();
 	funcs_by_name = mh_strnptr_new();
+	funcs_fin = mh_i32ptr_new();
 	sequences = mh_i32ptr_new();
 	/*
 	 * Create surrogate space objects for the mandatory system
@@ -540,6 +542,14 @@ schema_free(void)
 		func_delete(func);
 	}
 	mh_i32ptr_delete(funcs);
+	while (mh_size(funcs_fin) > 0) {
+		mh_int_t i = mh_first(funcs_fin);
+		struct func *func =
+			(struct func *)mh_i32ptr_node(funcs_fin, i)->val;
+		func_cache_delete(func->def->fid);
+		func_delete(func);
+	}
+	mh_i32ptr_delete(funcs_fin);
 	while (mh_size(sequences) > 0) {
 		mh_int_t i = mh_first(sequences);
 
@@ -595,6 +605,33 @@ func_by_name(const char *name, uint32_t name_len)
 	if (func == mh_end(funcs_by_name))
 		return NULL;
 	return (struct func *) mh_strnptr_node(funcs_by_name, func)->val;
+}
+
+void
+func_fin_cache_insert(struct func *func)
+{
+	uint32_t fid = func->def->fid;
+	assert(func_fin_by_id(fid) == NULL);
+	const struct mh_i32ptr_node_t node = {fid, func};
+	mh_i32ptr_put(funcs_fin, &node, NULL, NULL);
+}
+
+void
+func_fin_cache_delete(uint32_t fid)
+{
+	mh_int_t k = mh_i32ptr_find(funcs_fin, fid, NULL);
+	if (k == mh_end(funcs_fin))
+		return;
+	mh_i32ptr_del(funcs_fin, k, NULL);
+}
+
+struct func *
+func_fin_by_id(uint32_t fid)
+{
+	mh_int_t func = mh_i32ptr_find(funcs_fin, fid, NULL);
+	if (func == mh_end(funcs_fin))
+		return NULL;
+	return (struct func *)mh_i32ptr_node(funcs_fin, func)->val;
 }
 
 int

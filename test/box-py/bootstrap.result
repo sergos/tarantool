@@ -4,7 +4,7 @@ box.internal.bootstrap()
 box.space._schema:select{}
 ---
 - - ['max_id', 511]
-  - ['version', 2, 9, 1]
+  - ['version', 2, 10, 1]
 ...
 box.space._cluster:select{}
 ---
@@ -54,7 +54,7 @@ box.space._space:select{}
   - [296, 1, '_func', 'memtx', 0, {}, [{'name': 'id', 'type': 'unsigned'}, {'name': 'owner',
         'type': 'unsigned'}, {'name': 'name', 'type': 'string'}, {'name': 'setuid',
         'type': 'unsigned'}, {'name': 'language', 'type': 'string'}, {'name': 'body',
-        'type': 'string'}, {'name': 'routine_type', 'type': 'string'}, {'name': 'param_list',
+        'type': 'any'}, {'name': 'routine_type', 'type': 'string'}, {'name': 'param_list',
         'type': 'array'}, {'name': 'returns', 'type': 'string'}, {'name': 'aggregate',
         'type': 'string'}, {'name': 'sql_data_access', 'type': 'string'}, {'name': 'is_deterministic',
         'type': 'boolean'}, {'name': 'is_sandboxed', 'type': 'boolean'}, {'name': 'is_null_call',

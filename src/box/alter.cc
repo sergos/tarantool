@@ -3276,6 +3276,98 @@ func_def_get_ids_from_tuple(struct tuple *tuple, uint32_t *fid, uint32_t *uid)
 	return tuple_field_u32(tuple, BOX_FUNC_FIELD_UID, uid);
 }
 
+static int
+func_def_check_body(struct tuple *tuple)
+{
+	assert(tuple_field_count(tuple) > BOX_FUNC_FIELD_BODY);
+	const char *field = tuple_field(tuple, BOX_FUNC_FIELD_BODY);
+	assert(field != NULL);
+	enum mp_type type = mp_typeof(*field);
+	if (type == MP_STR)
+		return 0;
+	if (type != MP_MAP) {
+		diag_set(ClientError, ER_FIELD_TYPE, "map or string",
+			 mp_type_strs[type]);
+		return -1;
+	}
+	const char *agg = tuple_field_cstr(tuple, BOX_FUNC_FIELD_AGGREGATE);
+	if (agg == NULL)
+		return -1;
+	if (STR2ENUM(func_aggregate, agg) != FUNC_AGGREGATE_GROUP) {
+		const char *name = tuple_field_cstr(tuple, BOX_FUNC_FIELD_NAME);
+		diag_set(ClientError, ER_CREATE_FUNCTION, name,
+			 "only aggregate functions can have map as body");
+		return -1;
+	}
+
+	bool has_step = false;
+	bool has_finalize = false;
+	if (mp_decode_map(&field) != 2)
+		goto error;
+	for (int i = 0; i < 2; ++i) {
+		const char *value;
+		uint32_t size;
+		if (mp_typeof(*field) != MP_STR)
+			goto error;
+		value = mp_decode_str(&field, &size);
+		if (strlcmp("step", value, size) == 0)
+			has_step = true;
+		else if (strlcmp("finalize", value, size) == 0)
+			has_finalize = true;
+		else
+			goto error;
+		if (mp_typeof(*field) != MP_STR)
+			goto error;
+		mp_next(&field);
+	}
+	if (has_step && has_finalize)
+		return 0;
+error:
+	const char *name = tuple_field_cstr(tuple, BOX_FUNC_FIELD_NAME);
+	diag_set(ClientError, ER_CREATE_FUNCTION, name,
+		 "body of aggregate function should be map that contains "
+		 "exactly two string fields: 'step' and 'finalize'");
+	return -1;
+}
+
+static const char *
+func_def_get_agg_step_body(struct tuple *tuple, uint32_t *body_len)
+{
+	const char *field = tuple_field(tuple, BOX_FUNC_FIELD_BODY);
+	assert(field != NULL);
+	if (mp_typeof(*field) == MP_STR)
+		return mp_decode_str(&field, body_len);
+	assert(mp_typeof(*field) == MP_MAP);
+	mp_decode_map(&field);
+	uint32_t size;
+	mp_decode_str(&field, &size);
+	if (size == strlen("step"))
+		return mp_decode_str(&field, body_len);
+	mp_next(&field);
+	mp_next(&field);
+	return mp_decode_str(&field, body_len);
+}
+
+static const char *
+func_def_get_agg_finalize_body(struct tuple *tuple, uint32_t *body_len)
+{
+	const char *field = tuple_field(tuple, BOX_FUNC_FIELD_BODY);
+	assert(field != NULL);
+	if (mp_typeof(*field) == MP_STR) {
+		*body_len = 0;
+		return field;
+	}
+	assert(mp_typeof(*field) == MP_MAP);
+	mp_decode_map(&field);
+	uint32_t size;
+	mp_decode_str(&field, &size);
+	if (size == strlen("finalize"))
+		return mp_decode_str(&field, body_len);
+	mp_next(&field);
+	mp_next(&field);
+	return mp_decode_str(&field, body_len);
+}
+
 /** Create a function definition from tuple. */
 static struct func_def *
 func_def_new_from_tuple(struct tuple *tuple)
@@ -3295,7 +3387,9 @@ func_def_new_from_tuple(struct tuple *tuple)
 	if (identifier_check(name, name_len) != 0)
 		return NULL;
 	if (field_count > BOX_FUNC_FIELD_BODY) {
-		body = tuple_field_str(tuple, BOX_FUNC_FIELD_BODY, &body_len);
+		if (func_def_check_body(tuple) != 0)
+			return NULL;
+		body = func_def_get_agg_step_body(tuple, &body_len);
 		if (body == NULL)
 			return NULL;
 		comment = tuple_field_str(tuple, BOX_FUNC_FIELD_COMMENT,
@@ -3498,6 +3592,11 @@ func_def_new_from_tuple(struct tuple *tuple)
 		def->exports.lua = true;
 		def->param_count = 0;
 	}
+	if (def->aggregate == FUNC_AGGREGATE_GROUP && def->exports.lua != 0) {
+		diag_set(ClientError, ER_CREATE_FUNCTION, def->name,
+			 "aggregate function can only be accessed in SQL");
+		return NULL;
+	}
 	if (func_def_check(def) != 0)
 		return NULL;
 	def_guard.is_active = false;
@@ -3536,6 +3635,49 @@ on_drop_func_rollback(struct trigger *trigger, void * /* event */)
 	return 0;
 }
 
+struct func_def *
+func_fin_def_new(struct tuple *tuple, const struct func_def *def)
+{
+	const char *name = tt_sprintf("%s_finalize", def->name);
+	size_t name_len = strlen(name);
+	uint32_t body_len;
+	const char *body = func_def_get_agg_finalize_body(tuple, &body_len);
+	if (body == NULL)
+		return NULL;
+	if ((body_len == 0 && def->body != NULL) ||
+	    (def->body == NULL && body_len != 0)) {
+		diag_set(ClientError, ER_CREATE_FUNCTION, def->name,
+			 "step or finalize of aggregate function is undefined");
+		return NULL;
+	}
+	uint32_t len = sizeof(struct func_def) + name_len + 1;
+	if (body_len > 0)
+		len += body_len + 1;
+	struct func_def *fin_def = (struct func_def *)malloc(len);
+	fin_def->fid = def->fid;
+	fin_def->uid = def->uid;
+	if (body_len > 0) {
+		fin_def->body = fin_def->name + name_len + 1;
+		memcpy(fin_def->body, body, body_len);
+		fin_def->body[body_len] = '\0';
+	} else {
+		fin_def->body = NULL;
+	}
+	fin_def->comment = NULL;
+	fin_def->setuid = def->setuid;
+	fin_def->is_deterministic = def->is_deterministic;
+	fin_def->is_sandboxed = def->is_sandboxed;
+	fin_def->param_count = 0;
+	fin_def->returns = def->returns;
+	fin_def->aggregate = FUNC_AGGREGATE_GROUP;
+	fin_def->language = def->language;
+	fin_def->name_len = name_len;
+	fin_def->exports = def->exports;
+	fin_def->opts = def->opts;
+	memcpy(fin_def->name, name, name_len + 1);
+	return fin_def;
+}
+
 /**
  * A trigger invoked on replace in a space containing
  * functions on which there were defined any grants.
@@ -3568,6 +3710,16 @@ on_replace_dd_func(struct trigger * /* trigger */, void *event)
 		struct func *func = func_new(def);
 		if (func == NULL)
 			return -1;
+		if (def->aggregate == FUNC_AGGREGATE_GROUP) {
+			struct func_def *fin_def =
+				func_fin_def_new(new_tuple, def);
+			if (fin_def == NULL)
+				return -1;
+			struct func *func_fin = func_new(fin_def);
+			if (func_fin == NULL)
+				return -1;
+			func_fin_cache_insert(func_fin);
+		}
 		def_guard.is_active = false;
 		func_cache_insert(func);
 		on_rollback->data = func;
@@ -3610,6 +3762,8 @@ on_replace_dd_func(struct trigger * /* trigger */, void *event)
 			txn_alter_trigger_new(on_drop_func_rollback, old_func);
 		if (on_commit == NULL || on_rollback == NULL)
 			return -1;
+		if (old_func->def->aggregate == FUNC_AGGREGATE_GROUP)
+			func_fin_cache_delete(old_func->def->fid);
 		func_cache_delete(old_func->def->fid);
 		txn_stmt_on_commit(stmt, on_commit);
 		txn_stmt_on_rollback(stmt, on_rollback);
@@ -3622,9 +3776,13 @@ on_replace_dd_func(struct trigger * /* trigger */, void *event)
 		 * definition to support upgrade script.
 		 */
 		struct func_def *old_def = NULL, *new_def = NULL;
-		auto guard = make_scoped_guard([&old_def, &new_def] {
+		struct func_def *new_fin_def = NULL;
+		struct func_def *old_fin_def = NULL;
+		auto guard = make_scoped_guard([=] {
 			free(old_def);
 			free(new_def);
+			free(new_fin_def);
+			free(old_fin_def);
 		});
 		old_def = func_def_new_from_tuple(old_tuple);
 		new_def = func_def_new_from_tuple(new_tuple);
@@ -3635,6 +3793,18 @@ on_replace_dd_func(struct trigger * /* trigger */, void *event)
 				  "alter");
 			return -1;
 		}
+		if (new_def->aggregate != FUNC_AGGREGATE_GROUP)
+			return 0;
+		new_fin_def = func_fin_def_new(new_tuple, new_def);
+		old_fin_def = func_fin_def_new(old_tuple, old_def);
+		if (new_fin_def == NULL || old_fin_def == NULL)
+			return -1;
+		if (func_def_cmp(new_fin_def, old_fin_def) != 0) {
+			diag_set(ClientError, ER_UNSUPPORTED, "function",
+				 "alter");
+			return -1;
+		}
+		return 0;
 	}
 	return 0;
 }

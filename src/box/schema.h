@@ -102,6 +102,21 @@ func_by_id(uint32_t fid);
 struct func *
 func_by_name(const char *name, uint32_t name_len);
 
+/**
+ * Insert a new function object for finalize of aggregate function in the
+ * function cache.
+ *
+ * @param func Function object to insert.
+ */
+void
+func_fin_cache_insert(struct func *func);
+
+void
+func_fin_cache_delete(uint32_t fid);
+
+struct func *
+func_fin_by_id(uint32_t fid);
+
 /** Call a visitor function on every space in the space cache. */
 int
 space_foreach(int (*func)(struct space *sp, void *udata), void *udata);
