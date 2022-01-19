@@ -661,6 +661,7 @@ local log = {
         cfg_set_log_level = box_api_cfg_set_log_level,
         cfg_set_log_format = box_api_set_log_format,
     },
+    internal = get_stack()
 }
 
 setmetatable(log, {
