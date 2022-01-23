@@ -265,6 +265,15 @@ strlcpy(char *dst, const char *src, size_t size)
 #endif
 
 int
+strlcmp(const char *l, const char *r, size_t r_len)
+{
+	size_t l_len = strlen(l);
+	if (l_len != r_len)
+		return l_len - r_len > 0 ? 1 : -1;
+	return strncmp(l, r, r_len);
+}
+
+int
 utf8_check_printable(const char *start, size_t length)
 {
 	const unsigned char *end = (const unsigned char *) start + length;

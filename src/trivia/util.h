@@ -491,6 +491,19 @@ strlcpy(char *dst, const char *src, size_t size);
 #endif
 
 /**
+ * Compare two strings, the first of which is NULL-terminated and the second may
+ * not be NULL-terminated.
+ *
+ * @param l the first string, must be NULL-terminated.
+ * @param r the second string.
+ * @param r_len length of the second string.
+ *
+ * @return size of @a src string.
+ */
+int
+strlcmp(const char *l, const char *r, size_t r_len);
+
+/**
  * Check that @a str is valid utf-8 sequence and can be printed
  * unescaped.
  * @param str string
