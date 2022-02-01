@@ -33,6 +33,7 @@
 #include <trivia/config.h>
 #include <crc32_impl.h>
 #include <cpu_feature.h>
+#include <stdio.h>
 /*
  * Pointer to an architecture-specific implementation of
  * CRC32 calculation method.
@@ -44,7 +45,10 @@ crc32_init(void)
 {
 #if defined(HAVE_CPUID) && (defined (__x86_64__) || defined (__i386__))
 	crc32_calc = sse42_enabled_cpu() ? &crc32c_hw : &crc32c;
+	fprintf(stderr, "SSE42 %s\n",
+		sse42_enabled_cpu() ? "enabled" : "disabled");
 #else
 	crc32_calc = &crc32c;
+	fprintf(stderr, "SSE42 disabled at compile time\n");
 #endif
 }
