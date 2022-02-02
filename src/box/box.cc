@@ -98,13 +98,6 @@ double txn_timeout_default;
 struct rlist box_on_shutdown_trigger_list =
 	RLIST_HEAD_INITIALIZER(box_on_shutdown_trigger_list);
 
-static void title(const char *new_status)
-{
-	snprintf(status, sizeof(status), "%s", new_status);
-	title_set_status(new_status);
-	title_update();
-	systemd_snotify("STATUS=%s", status);
-}
 
 const struct vclock *box_vclock = &replicaset.vclock;
 
@@ -161,6 +154,20 @@ static struct fiber_pool tx_fiber_pool;
  */
 static struct cbus_endpoint tx_prio_endpoint;
 
+static void
+box_broadcast_status(void);
+
+static void
+title(const char *new_status)
+{
+	snprintf(status, sizeof(status), "%s", new_status);
+	title_set_status(new_status);
+	title_update();
+	systemd_snotify("STATUS=%s", status);
+	/* Checking box.info.status change */
+	box_broadcast_status();
+}
+
 void
 box_update_ro_summary(void)
 {
@@ -174,6 +181,7 @@ box_update_ro_summary(void)
 	if (is_ro_summary)
 		engine_switch_to_ro();
 	fiber_cond_broadcast(&ro_cond);
+	box_broadcast_status();
 }
 
 const char *
@@ -3932,4 +3940,23 @@ box_reset_stat(void)
 	rmean_cleanup(rmean_error);
 	engine_reset_stat();
 	space_foreach(box_reset_space_stat, NULL);
+}
+
+static void
+box_broadcast_status(void)
+{
+	char buf[1024];
+	char *w = buf;
+
+	w = mp_encode_map(w, 3);
+	w = mp_encode_str0(w, "is_ro");
+	w = mp_encode_bool(w, box_is_ro());
+	w = mp_encode_str0(w, "is_ro_cfg");
+	w = mp_encode_bool(w, cfg_geti("read_only"));
+	w = mp_encode_str0(w, "status");
+	w = mp_encode_str0(w, box_status());
+
+	box_broadcast("box.status", strlen("box.status"), buf, w);
+
+	assert((size_t)(w - buf) < 1024);
 }
