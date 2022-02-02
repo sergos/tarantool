@@ -182,6 +182,7 @@ box_update_ro_summary(void)
 		engine_switch_to_ro();
 	fiber_cond_broadcast(&ro_cond);
 	box_broadcast_status();
+	box_broadcast_election();
 }
 
 const char *
@@ -3957,6 +3958,29 @@ box_broadcast_status(void)
 	w = mp_encode_str0(w, box_status());
 
 	box_broadcast("box.status", strlen("box.status"), buf, w);
+
+	assert((size_t)(w - buf) < 1024);
+}
+
+void
+box_broadcast_election()
+{
+	struct raft *raft = box_raft();
+
+	char buf[1024];
+	char *w = buf;
+
+	w = mp_encode_map(w, 4);
+	w = mp_encode_str0(w, "term");
+	w = mp_encode_uint(w, raft->term);
+	w = mp_encode_str0(w, "role");
+	w = mp_encode_str0(w, raft_state_str(raft->state));
+	w = mp_encode_str0(w, "is_ro");
+	w = mp_encode_bool(w, box_is_ro());
+	w = mp_encode_str0(w, "leader");
+	w = mp_encode_uint(w, raft->leader);
+
+	box_broadcast("box.election", strlen("box.election"), buf, w);
 
 	assert((size_t)(w - buf) < 1024);
 }
