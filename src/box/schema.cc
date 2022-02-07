@@ -728,3 +728,17 @@ schema_find_name(enum schema_object_type type, uint32_t object_id)
 	return NULL;
 }
 
+void
+box_broadcast_schema(void)
+{
+	char buf[1024];
+	char *w = buf;
+
+	w = mp_encode_map(w, 1);
+	w = mp_encode_str0(w, "version");
+	w = mp_encode_uint(w, box_schema_version());
+
+	box_broadcast("box.schema", strlen("box.schema"), buf, w);
+
+	assert((size_t)(w - buf) < 1024);
+}

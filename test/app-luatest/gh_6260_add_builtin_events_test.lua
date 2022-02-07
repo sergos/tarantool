@@ -3,6 +3,7 @@ local net = require('net.box')
 local cluster = require('test.luatest_helpers.cluster')
 local helpers = require('test.luatest_helpers')
 local fiber = require('fiber')
+local server = require('test.luatest_helpers.server')
 
 local g = t.group('gh_6260')
 
@@ -198,4 +199,42 @@ g.test_box_election_event= function(cg)
     c[1]:close()
     c[2]:close()
     c[3]:close()
+end
+
+g.before_test('test_box_schema', function(cg)
+    g.server = server:new({alias = 'master'})
+end)
+
+g.after_test('test_box_schema', function(cg)
+    g.server:cleanup()
+end)
+
+g.test_box_schema = function()
+    g.server:start({wait_for_readiness = true})
+    local c = net.connect(g.server.net_box_uri)
+    local version = 0
+    local version_n = 0
+    c:watch('box.schema', function(n, s)
+	                      t.assert_equals(n, 'box.schema')
+                              version = s.version
+			      version_n = version_n + 1
+                          end)
+
+    g.server:eval("box.schema.create_space('p')")
+    while version_n < 1 do fiber.sleep(0.001) end
+    -- virst version change, use it as initial value
+    local init_version = version
+
+    version_n = 0
+    g.server:eval("box.space.p:create_index('i')")
+    while version_n < 1 do fiber.sleep(0.001) end
+    t.assert_equals(version, init_version + 1)
+
+    version_n = 0
+    g.server:eval("box.space.p:drop()")
+    while version_n < 1 do fiber.sleep(0.001) end
+    -- there'll be 2 changes - index and space
+    t.assert_equals(version, init_version + 3)
+
+    c:close()
 end

@@ -35,6 +35,7 @@
 #include <stdio.h> /* snprintf */
 #include "error.h"
 #include "space.h"
+#include "watcher.h"
 
 #if defined(__cplusplus)
 extern "C" {
@@ -276,5 +277,11 @@ entity_access_get(enum schema_object_type type)
 		return NULL;
 	}
 }
+
+/**
+ * Broadcast the current schema version
+ */
+void
+box_broadcast_schema(void);
 
 #endif /* INCLUDES_TARANTOOL_BOX_SCHEMA_H */

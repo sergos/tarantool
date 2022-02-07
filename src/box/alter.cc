@@ -1685,6 +1685,7 @@ UpdateSchemaVersion::alter(struct alter_space *alter)
 {
     (void)alter;
     ++schema_version;
+    box_broadcast_schema();
 }
 
 /**
@@ -2260,6 +2261,7 @@ on_replace_dd_space(struct trigger * /* trigger */, void *event)
 		 * create.
 		 */
 		++schema_version;
+		box_broadcast_schema();
 		/*
 		 * So may happen that until the DDL change record
 		 * is written to the WAL, the space is used for
@@ -2374,6 +2376,7 @@ on_replace_dd_space(struct trigger * /* trigger */, void *event)
 		 * AlterSpaceOps are registered in case of space drop.
 		 */
 		++schema_version;
+		box_broadcast_schema();
 		struct trigger *on_commit =
 			txn_alter_trigger_new(on_drop_space_commit, old_space);
 		if (on_commit == NULL)
@@ -5072,6 +5075,7 @@ on_replace_dd_trigger(struct trigger * /* trigger */, void *event)
 	txn_stmt_on_rollback(stmt, on_rollback);
 	txn_stmt_on_commit(stmt, on_commit);
 	++schema_version;
+	box_broadcast_schema();
 	return 0;
 }
 
@@ -5599,6 +5603,7 @@ on_replace_dd_fk_constraint(struct trigger * /* trigger*/, void *event)
 		space_reset_fk_constraint_mask(parent_space);
 	}
 	++schema_version;
+	box_broadcast_schema();
 	return 0;
 }
 
@@ -5855,6 +5860,7 @@ on_replace_dd_ck_constraint(struct trigger * /* trigger*/, void *event)
 	if (trigger_run(&on_alter_space, space) != 0)
 		return -1;
 	++schema_version;
+	box_broadcast_schema();
 	return 0;
 }
 
