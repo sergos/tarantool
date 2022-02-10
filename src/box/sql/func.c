@@ -2060,6 +2060,10 @@ sql_func_find(struct Expr *expr)
 		return NULL;
 	}
 	int n = expr->x.pList != NULL ? expr->x.pList->nExpr : 0;
+	/*
+	 * Aggregate functions accept state for the last argument, so it accepts
+	 * one argument less than it is said in definition.
+	 */
 	int argc = func->def->aggregate == FUNC_AGGREGATE_GROUP ?
 		   func->def->param_count - 1 : func->def->param_count;
 	assert(argc >= 0);

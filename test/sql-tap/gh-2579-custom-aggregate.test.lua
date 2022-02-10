@@ -1,14 +1,15 @@
 #!/usr/bin/env tarantool
 local build_path = os.getenv("BUILDDIR")
-package.cpath = build_path..'/test/sql-tap/?.so;'..build_path..'/test/sql-tap/?.dylib;'..package.cpath
+package.cpath = build_path..'/test/sql-tap/?.so;'..build_path..
+                '/test/sql-tap/?.dylib;'..package.cpath
 
 local test = require("sqltester")
 test:plan(5)
 
 test:execsql([[
-        CREATE TABLE t (i INT PRIMARY KEY);
-        INSERT INTO t VALUES(1), (2), (3), (4), (5);
-    ]])
+    CREATE TABLE t (i INT PRIMARY KEY);
+    INSERT INTO t VALUES(1), (2), (3), (4), (5);
+]])
 
 -- Make sure that persistent aggregate functions work as intended.
 box.schema.func.create("F1", {
