@@ -61,6 +61,7 @@
 #include "tt_static.h"
 #include "memory.h"
 #include "ssl_error.h"
+#include "backtrace.h"
 
 STRS(applier_state, applier_STATE);
 
@@ -2279,11 +2280,29 @@ reconnect:
 	return 0;
 }
 
+int
+applier_yield_cb(struct trigger* t, void* e)
+{
+	(void)t;
+	(void)e;
+	say_info("applier yield");
+	struct backtrace bt;
+	char buf[2048];
+	backtrace_collect(&bt, fiber(), 0);
+	backtrace_snprint(buf, sizeof(buf), &bt);
+	say_info("%s", buf);
+	return 0;
+}
+
 void
 applier_start(struct applier *applier)
 {
 	assert(applier->fiber == NULL);
 	applier->fiber = applier_fiber_new(applier, "applier", applier_f);
+	size_t trigger_size;
+	struct trigger* applier_trigger = region_alloc_object(&applier->fiber->gc, struct trigger, &trigger_size);
+	trigger_create(applier_trigger, applier_yield_cb, NULL, NULL);
+	trigger_add(&applier->fiber->on_yield, applier_trigger);
 	fiber_start(applier->fiber, applier);
 }
 
